@@ -5,7 +5,19 @@
 ![Security](https://img.shields.io/badge/OAuth-2.0-green.svg)
 ![Platform](https://img.shields.io/badge/platform-Cloudflare%20Workers-orange.svg)
 
-Discord のスラッシュコマンドを使用して勤怠管理を行うボットです。Hono フレームワークを使用して Cloudflare Workers 上で動作し、各サーバー管理者が個別に Google OAuth 2.0 認証を行うことで、データの保存には Google スプレッドシートを使用します。
+Disc### エラーハンドリング
+
+- **二重打刻防止**: KV で開始済み勤務をチェック。前回の勤務が終了していない状態で開始しようとした場合
+- **未終了勤怠なし**: KV で開始記録をチェック。開始していない状態で終了しようとした場合
+- **🆕 時刻指定エラー**:
+  - 無効な時刻形式（HH:MM, HHMM, HMM 以外）
+  - 開始時刻が現在時刻より未来
+  - 終了時刻が開始時刻より前
+- **署名検証エラー**: Discord 署名が無効な場合（セキュリティ）
+- **Google Sheets API エラー**: Google Sheets APIとの通信に失敗した場合（自動リトライ機能付き）
+- **OAuth認証エラー**: トークンの有効期限切れや権限不足
+- **KV アクセスエラー**: Cloudflare KV との通信に失敗した場合
+- **ネットワークタイムアウト**: 通信環境が悪い場合の自動リトライ（最大 3 回）ドを使用して勤怠管理を行うボットです。Hono フレームワークを使用して Cloudflare Workers 上で動作し、各サーバー管理者が個別に Google OAuth 2.0 認証を行うことで、データの保存には Google スプレッドシートを使用します。
 
 ## 🎉 Bot リリース対応版（直接OAuth方式）
 
