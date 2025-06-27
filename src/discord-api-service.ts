@@ -1,5 +1,11 @@
 import { Bindings } from "./types";
-import { APIChannel, ChannelType, MessageFlags } from "discord-api-types/v10";
+
+// Discord API型定義 - 型安全性とIntelliSense向上のため使用
+import { 
+  APIChannel,    // チャンネル情報の型定義
+  ChannelType,   // チャンネルタイプ列挙型
+  MessageFlags   // メッセージフラグ（Ephemeral等）
+} from "discord-api-types/v10";
 
 /**
  * Discord API サービスクラス

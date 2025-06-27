@@ -1,12 +1,68 @@
 import { GoogleSheetsResponse, GoogleOAuthTokens, Bindings } from "./types";
 
+// スプレッドシートのカラム定義を統一
+const KINTAI_COLUMNS = {
+  DATE: 0, // A: 日付
+  USERNAME: 1, // B: ユーザー名
+  USER_ID: 2, // C: ユーザーID
+  PROJECT: 3, // D: プロジェクト名
+  START_TIME: 4, // E: 開始時刻
+  END_TIME: 5, // F: 終了時刻
+  WORK_HOURS: 6, // G: 勤務時間
+  RECORD_ID: 7, // H: 記録ID
+} as const;
+
+// 統一されたヘッダー定義
+const KINTAI_HEADERS = [
+  "日付",
+  "ユーザー名",
+  "ユーザーID",
+  "プロジェクト名",
+  "開始時刻",
+  "終了時刻",
+  "勤務時間",
+  "記録ID",
+];
+
 export class SheetsService {
   private accessToken: string;
   private env: Bindings;
+  private readonly baseUrl = "https://sheets.googleapis.com/v4/spreadsheets";
 
   constructor(env: Bindings, accessToken?: string) {
     this.env = env;
     this.accessToken = accessToken || "";
+  }
+
+  /**
+   * APIリクエストの共通ヘッダーを取得
+   */
+  private getHeaders(): Record<string, string> {
+    return {
+      Authorization: `Bearer ${this.accessToken}`,
+      "Content-Type": "application/json",
+    };
+  }
+
+  /**
+   * Google Sheets APIのエラーハンドリング
+   */
+  private async handleApiResponse(
+    response: Response,
+    operation: string
+  ): Promise<any> {
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error(`Sheets API Error (${operation}):`, {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorData,
+      });
+      throw new Error(
+        `${operation}に失敗しました: ${response.status} ${response.statusText}`
+      );
+    }
+    return response.json();
   }
 
   /**
@@ -15,44 +71,33 @@ export class SheetsService {
   async createSpreadsheet(title: string): Promise<GoogleSheetsResponse> {
     const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM format
 
-    const response = await fetch(
-      "https://sheets.googleapis.com/v4/spreadsheets",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.accessToken}`,
-          "Content-Type": "application/json",
+    const response = await fetch(this.baseUrl, {
+      method: "POST",
+      headers: this.getHeaders(),
+      body: JSON.stringify({
+        properties: {
+          title: title || `勤怠管理_${currentMonth}`,
+          locale: "ja_JP",
+          timeZone: "Asia/Tokyo",
         },
-        body: JSON.stringify({
-          properties: {
-            title: title || `勤怠管理_${currentMonth}`,
-          },
-          sheets: [
-            {
-              properties: {
-                title: currentMonth,
-                gridProperties: {
-                  rowCount: 1000,
-                  columnCount: 10,
-                },
+        sheets: [
+          {
+            properties: {
+              title: currentMonth,
+              gridProperties: {
+                rowCount: 1000,
+                columnCount: 10,
               },
             },
-          ],
-        }),
-      }
-    );
+          },
+        ],
+      }),
+    });
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      throw new Error(
-        `Failed to create spreadsheet: ${response.status} ${errorData}`
-      );
-    }
+    const data = await this.handleApiResponse(response, "スプレッドシート作成");
 
-    const data = (await response.json()) as any;
-
-    // ヘッダー行を追加
-    await this.setupHeaders(data.spreadsheetId, currentMonth);
+    // 統一されたヘッダー行を追加
+    await this.setupKintaiHeaders(data.spreadsheetId, currentMonth);
 
     return {
       spreadsheetId: data.spreadsheetId,
@@ -62,103 +107,103 @@ export class SheetsService {
   }
 
   /**
-   * スプレッドシートにヘッダー行を設定
+   * 勤怠管理用のヘッダー行を設定（統一版）
    */
-  private async setupHeaders(
+  private async setupKintaiHeaders(
     spreadsheetId: string,
     sheetTitle: string
   ): Promise<void> {
-    const headers = [
-      "日付",
-      "曜日",
-      "開始時刻",
-      "終了時刻",
-      "休憩時間",
-      "勤務時間",
-      "備考",
-      "ユーザー名",
-      "UUID",
-    ];
-
-    await this.updateRange(spreadsheetId, `${sheetTitle}!A1:I1`, [headers]);
+    // ヘッダー行を設定
+    await this.updateRange(spreadsheetId, `${sheetTitle}!A1:H1`, [
+      KINTAI_HEADERS,
+    ]);
 
     // ヘッダー行のフォーマットを設定
-    await this.formatHeaders(spreadsheetId, sheetTitle);
+    await this.formatHeaders(spreadsheetId, 0); // 最初のシートのID
   }
 
   /**
-   * ヘッダー行のフォーマットを設定
+   * ヘッダー行のフォーマットを設定（改善版）
    */
   private async formatHeaders(
     spreadsheetId: string,
-    sheetTitle: string
+    sheetId: number
   ): Promise<void> {
     const requests = [
       {
         repeatCell: {
           range: {
-            sheetId: 0, // 最初のシートのID
+            sheetId: sheetId,
             startRowIndex: 0,
             endRowIndex: 1,
             startColumnIndex: 0,
-            endColumnIndex: 9,
+            endColumnIndex: KINTAI_HEADERS.length,
           },
           cell: {
             userEnteredFormat: {
               backgroundColor: {
-                red: 0.9,
-                green: 0.9,
-                blue: 0.9,
+                red: 0.2,
+                green: 0.4,
+                blue: 0.6,
               },
               textFormat: {
                 bold: true,
+                foregroundColor: {
+                  red: 1.0,
+                  green: 1.0,
+                  blue: 1.0,
+                },
               },
+              horizontalAlignment: "CENTER",
             },
           },
-          fields: "userEnteredFormat(backgroundColor,textFormat)",
+          fields:
+            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)",
+        },
+      },
+      // 列幅の自動調整
+      {
+        autoResizeDimensions: {
+          dimensions: {
+            sheetId: sheetId,
+            dimension: "COLUMNS",
+            startIndex: 0,
+            endIndex: KINTAI_HEADERS.length,
+          },
         },
       },
     ];
 
-    await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+    const response = await fetch(
+      `${this.baseUrl}/${spreadsheetId}:batchUpdate`,
       {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.accessToken}`,
-          "Content-Type": "application/json",
-        },
+        headers: this.getHeaders(),
         body: JSON.stringify({ requests }),
       }
     );
+
+    await this.handleApiResponse(response, "ヘッダーフォーマット設定");
   }
 
   /**
    * スプレッドシートに行を追加
    */
   async appendRow(
-    spreadsheetId: string, 
-    range: string, 
+    spreadsheetId: string,
+    range: string,
     values: string[][]
   ): Promise<void> {
     const response = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`,
+      `${this.baseUrl}/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`,
       {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          values: values,
-        }),
+        headers: this.getHeaders(),
+        body: JSON.stringify({ values }),
       }
     );
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      throw new Error(`Failed to append row: ${response.status} ${errorData}`);
-    }
+    await this.handleApiResponse(response, "行の追加");
   }
 
   /**
@@ -170,25 +215,15 @@ export class SheetsService {
     values: string[][]
   ): Promise<void> {
     const response = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`,
+      `${this.baseUrl}/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`,
       {
         method: "PUT",
-        headers: {
-          Authorization: `Bearer ${this.accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          values: values,
-        }),
+        headers: this.getHeaders(),
+        body: JSON.stringify({ values }),
       }
     );
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      throw new Error(
-        `Failed to update range: ${response.status} ${errorData}`
-      );
-    }
+    await this.handleApiResponse(response, "範囲の更新");
   }
 
   /**
@@ -196,21 +231,14 @@ export class SheetsService {
    */
   async getRange(spreadsheetId: string, range: string): Promise<string[][]> {
     const response = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`,
+      `${this.baseUrl}/${spreadsheetId}/values/${range}`,
       {
         method: "GET",
-        headers: {
-          Authorization: `Bearer ${this.accessToken}`,
-        },
+        headers: this.getHeaders(),
       }
     );
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      throw new Error(`Failed to get range: ${response.status} ${errorData}`);
-    }
-
-    const data = (await response.json()) as any;
+    const data = await this.handleApiResponse(response, "範囲の取得");
     return data.values || [];
   }
 
@@ -252,150 +280,67 @@ export class SheetsService {
   /**
    * 勤怠管理用スプレッドシートを作成（Botセットアップ用）
    */
-  async createKintaiSpreadsheet(guildId: string): Promise<{ 
-    success: boolean; 
-    spreadsheetId?: string; 
-    spreadsheetUrl?: string; 
-    error?: string; 
+  async createKintaiSpreadsheet(guildId: string): Promise<{
+    success: boolean;
+    spreadsheetId?: string;
+    spreadsheetUrl?: string;
+    error?: string;
   }> {
     try {
+      const currentMonth = new Date().toISOString().slice(0, 7);
       const spreadsheetTitle = `勤怠管理_${guildId}_${new Date().toLocaleDateString(
         "ja-JP"
       )}`;
 
       // スプレッドシートを作成
-      const createResponse = await fetch(
-        "https://sheets.googleapis.com/v4/spreadsheets",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${this.accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            properties: {
-              title: spreadsheetTitle,
-              locale: "ja_JP",
-              timeZone: "Asia/Tokyo",
-            },
-            sheets: [
-              {
-                properties: {
-                  title: new Date().toISOString().slice(0, 7), // YYYY-MM
-                  gridProperties: {
-                    rowCount: 1000,
-                    columnCount: 10,
-                  },
-                },
-              },
-            ],
-          }),
-        }
-      );
-
-      if (!createResponse.ok) {
-        const errorData = await createResponse.text();
-        return {
-          success: false,
-          error: `スプレッドシート作成に失敗: ${createResponse.status} ${errorData}`
-        };
-      }
-
-      const spreadsheetData = await createResponse.json() as GoogleSheetsResponse;
-      const spreadsheetId = spreadsheetData.spreadsheetId;
-      const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
-
-      // ヘッダー行を追加
-      await this.setupInitialData(spreadsheetId);
-
-      return {
-        success: true,
-        spreadsheetId,
-        spreadsheetUrl
-      };
-    } catch (error) {
-      console.error('Spreadsheet creation error:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'スプレッドシート作成中に不明なエラーが発生しました'
-      };
-    }
-  }
-
-  /**
-   * スプレッドシートの初期データ設定
-   */
-  private async setupInitialData(spreadsheetId: string): Promise<void> {
-    const headers = [
-      "タイムスタンプ",
-      "ユーザーID",
-      "ユーザー名",
-      "アクション",
-      "チャンネル名",
-      "メッセージ",
-      "日付",
-      "時刻",
-      "勤務時間",
-    ];
-
-    const currentMonth = new Date().toISOString().slice(0, 7);
-
-    await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${currentMonth}!A1:I1?valueInputOption=RAW`,
-      {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${this.accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          values: [headers],
-        }),
-      }
-    );
-
-    // ヘッダー行のフォーマットを設定
-    await this.formatKintaiHeaders(spreadsheetId);
-  }
-
-  /**
-   * 勤怠管理用ヘッダーのフォーマット設定
-   */
-  private async formatKintaiHeaders(spreadsheetId: string): Promise<void> {
-    await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
-      {
+      const response = await fetch(this.baseUrl, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.accessToken}`,
-          "Content-Type": "application/json",
-        },
+        headers: this.getHeaders(),
         body: JSON.stringify({
-          requests: [
+          properties: {
+            title: spreadsheetTitle,
+            locale: "ja_JP",
+            timeZone: "Asia/Tokyo",
+          },
+          sheets: [
             {
-              repeatCell: {
-                range: {
-                  sheetId: 0,
-                  startRowIndex: 0,
-                  endRowIndex: 1,
-                  startColumnIndex: 0,
-                  endColumnIndex: 9,
+              properties: {
+                title: currentMonth,
+                gridProperties: {
+                  rowCount: 1000,
+                  columnCount: 10,
                 },
-                cell: {
-                  userEnteredFormat: {
-                    backgroundColor: { red: 0.9, green: 0.9, blue: 0.9 },
-                    textFormat: { bold: true },
-                    horizontalAlignment: "CENTER",
-                  },
-                },
-                fields:
-                  "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)",
               },
             },
           ],
         }),
-      }
-    );
+      });
+
+      const spreadsheetData = await this.handleApiResponse(
+        response,
+        "スプレッドシート作成"
+      );
+      const spreadsheetId = spreadsheetData.spreadsheetId;
+      const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+
+      // 統一されたヘッダー行を追加
+      await this.setupKintaiHeaders(spreadsheetId, currentMonth);
+
+      return {
+        success: true,
+        spreadsheetId,
+        spreadsheetUrl,
+      };
+    } catch (error) {
+      console.error("Spreadsheet creation error:", error);
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "スプレッドシート作成中に不明なエラーが発生しました",
+      };
+    }
   }
 
   /**
@@ -427,29 +372,24 @@ export class SheetsService {
         await this.createMonthlySheet(spreadsheetId, sheetName);
       }
 
-      // 日付フォーマット
-      const dateStr = startTime.toLocaleDateString("ja-JP", {
-        timeZone: "Asia/Tokyo",
-      });
-      const timeStr = startTime.toLocaleTimeString("ja-JP", {
-        timeZone: "Asia/Tokyo",
-        hour12: false,
-      });
+      // 日付フォーマット（統一されたJST処理）
+      const dateStr = this.formatDateToJST(startTime);
+      const timeStr = this.formatTimeToJST(startTime);
 
       // 記録ID生成
       const recordId = `${userId}_${Date.now()}`;
 
-      // データを追加
+      // データを追加（統一されたカラム構造を使用）
       const values = [
         [
-          dateStr,           // A: 日付
-          username,          // B: ユーザー名
-          userId,            // C: ユーザーID
-          projectName,       // D: プロジェクト名
-          timeStr,           // E: 開始時刻
-          "",                // F: 終了時刻
-          "",                // G: 勤務時間
-          recordId,          // H: 記録ID
+          dateStr, // A: 日付
+          username, // B: ユーザー名
+          userId, // C: ユーザーID
+          projectName, // D: プロジェクト名
+          timeStr, // E: 開始時刻
+          "", // F: 終了時刻
+          "", // G: 勤務時間
+          recordId, // H: 記録ID
         ],
       ];
 
@@ -463,7 +403,8 @@ export class SheetsService {
       console.error("Failed to record start time:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "記録の保存に失敗しました",
+        error:
+          error instanceof Error ? error.message : "記録の保存に失敗しました",
       };
     }
   }
@@ -490,9 +431,11 @@ export class SheetsService {
       const values = await this.getRange(spreadsheetId, range);
 
       let targetRowIndex = -1;
-      for (let i = 1; i < values.length; i++) { // ヘッダー行をスキップ
+      for (let i = 1; i < values.length; i++) {
+        // ヘッダー行をスキップ
         const row = values[i];
-        if (row[7] === recordId && row[5] === "") { // 記録IDが一致し、終了時刻が空
+        if (row[7] === recordId && row[5] === "") {
+          // 記録IDが一致し、終了時刻が空
           targetRowIndex = i + 1; // Google Sheetsは1ベース
           break;
         }
@@ -529,9 +472,26 @@ export class SheetsService {
       console.error("Failed to record end time:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "記録の更新に失敗しました",
+        error:
+          error instanceof Error ? error.message : "記録の更新に失敗しました",
       };
     }
+  }
+
+  /**
+   * 日時フォーマットのヘルパーメソッド
+   */
+  private formatDateToJST(date: Date): string {
+    return date.toLocaleDateString("ja-JP", {
+      timeZone: "Asia/Tokyo",
+    });
+  }
+
+  private formatTimeToJST(date: Date): string {
+    return date.toLocaleTimeString("ja-JP", {
+      timeZone: "Asia/Tokyo",
+      hour12: false,
+    });
   }
 
   /**
@@ -553,7 +513,9 @@ export class SheetsService {
       const hours = Math.floor(diffHours);
       const minutes = Math.floor((diffHours - hours) * 60);
 
-      return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+      return `${hours.toString().padStart(2, "0")}:${minutes
+        .toString()
+        .padStart(2, "0")}`;
     } catch (error) {
       console.error("Failed to calculate work hours:", error);
       return "計算エラー";
@@ -563,7 +525,10 @@ export class SheetsService {
   /**
    * 月次シートを作成
    */
-  async createMonthlySheet(spreadsheetId: string, sheetName: string): Promise<void> {
+  async createMonthlySheet(
+    spreadsheetId: string,
+    sheetName: string
+  ): Promise<void> {
     // シートを追加
     const addSheetResponse = await fetch(
       `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
@@ -593,36 +558,24 @@ export class SheetsService {
 
     if (!addSheetResponse.ok) {
       const errorData = await addSheetResponse.text();
-      throw new Error(`Failed to add sheet: ${addSheetResponse.status} ${errorData}`);
+      throw new Error(
+        `Failed to add sheet: ${addSheetResponse.status} ${errorData}`
+      );
     }
 
-    // ヘッダー行を追加
-    const headerValues = [
-      ["日付", "ユーザー名", "ユーザーID", "プロジェクト", "開始時刻", "終了時刻", "勤務時間", "記録ID"],
-    ];
-
-    await this.appendRow(spreadsheetId, `${sheetName}!A1:H1`, headerValues);
+    // 統一されたヘッダー行を追加
+    await this.appendRow(spreadsheetId, `${sheetName}!A1:H1`, [KINTAI_HEADERS]);
   }
 
   /**
    * スプレッドシート情報を取得
    */
   private async getSpreadsheetInfo(spreadsheetId: string): Promise<any> {
-    const response = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${this.accessToken}`,
-        },
-      }
-    );
+    const response = await fetch(`${this.baseUrl}/${spreadsheetId}`, {
+      method: "GET",
+      headers: this.getHeaders(),
+    });
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      throw new Error(`Failed to get spreadsheet info: ${response.status} ${errorData}`);
-    }
-
-    return response.json();
+    return this.handleApiResponse(response, "スプレッドシート情報取得");
   }
 }

@@ -1,10 +1,12 @@
 import { Hono } from "hono";
 import { Bindings } from "./types";
+
+// Discord API型定義 - 型安全性とIntelliSense向上のため使用
 import {
-  InteractionType,
-  InteractionResponseType,
-  MessageFlags,
-  APIInteraction,
+  InteractionType,        // インタラクションタイプ（ApplicationCommand等）
+  InteractionResponseType, // レスポンスタイプ（DeferredChannelMessage等）
+  MessageFlags,           // メッセージフラグ（Ephemeral等）
+  APIInteraction,         // インタラクションの型定義
 } from "discord-api-types/v10";
 import {
   verifyDiscordRequest,
