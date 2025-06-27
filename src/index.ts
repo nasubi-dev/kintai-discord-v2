@@ -13,7 +13,6 @@ import {
   isFutureTime,
   formatDateToJST,
 } from "./utils";
-import { DiscordCommandService } from "./discord-service";
 import { DiscordApiService } from "./discord-api-service";
 import { OAuthService } from "./oauth-service";
 import { ServerConfigService } from "./server-config-service";
