@@ -1,11 +1,11 @@
 import { Hono } from "hono";
+import { Bindings } from "./types";
 import {
-  Bindings,
-  DiscordInteraction,
   InteractionType,
   InteractionResponseType,
   MessageFlags,
-} from "./types";
+  APIInteraction,
+} from "discord-api-types/v10";
 import {
   verifyDiscordRequest,
   isTimestampValid,
@@ -68,24 +68,24 @@ app.post("/api/interactions", async (c) => {
     console.log("Discord signature verified successfully");
 
     // JSONをパース
-    const body = JSON.parse(rawBody) as DiscordInteraction;
+    const body = JSON.parse(rawBody) as APIInteraction;
     console.log("Interaction type:", body.type);
     console.log("Interaction data:", JSON.stringify(body.data, null, 2));
 
     // PINGリクエストの処理
-    if (body.type === InteractionType.PING) {
+    if (body.type === InteractionType.Ping) {
       console.log("Handling PING request");
-      return c.json({ type: InteractionResponseType.PONG });
+      return c.json({ type: InteractionResponseType.Pong });
     }
 
     // アプリケーションコマンドの処理
-    if (body.type === InteractionType.APPLICATION_COMMAND) {
+    if (body.type === InteractionType.ApplicationCommand) {
       console.log("Handling APPLICATION_COMMAND with Deferred Response");
 
       // 即座にDeferred Responseを返す（通信環境対応）
       // 成功時は全員に見える、エラー時はEPHEMERALになるよう後で調整
       const deferredResponse = {
-        type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
+        type: InteractionResponseType.DeferredChannelMessageWithSource,
       };
 
       // バックグラウンドで実際の処理を実行
@@ -97,7 +97,7 @@ app.post("/api/interactions", async (c) => {
     // 未対応のインタラクションタイプ
     console.log("Unsupported interaction type:", body.type);
     return c.json({
-      type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+      type: InteractionResponseType.ChannelMessageWithSource,
       data: {
         content: "❌ サポートされていないインタラクションタイプです。",
         flags: 64, // EPHEMERAL
@@ -111,7 +111,7 @@ app.post("/api/interactions", async (c) => {
     );
     return c.json(
       {
-        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+        type: InteractionResponseType.ChannelMessageWithSource,
         data: {
           content: "❌ リクエストの処理中にエラーが発生しました。",
           flags: 64, // EPHEMERAL
@@ -155,18 +155,35 @@ app.onError((err, c) => {
  */
 async function handleSlashCommandDeferred(
   c: any,
-  interaction: DiscordInteraction
+  interaction: APIInteraction
 ): Promise<void> {
-  const commandName = interaction.data?.name;
+  // アプリケーションコマンドの場合の型ガード
+  if (
+    interaction.type !== InteractionType.ApplicationCommand ||
+    !interaction.data
+  ) {
+    return;
+  }
+
+  // APIChatInputApplicationCommandInteractionDataの場合のみ処理
+  const data = interaction.data;
+  if (!("name" in data)) {
+    return;
+  }
+
+  const commandName = data.name;
   const userId = interaction.member?.user?.id || interaction.user?.id;
   const channelId = interaction.channel_id;
   const token = interaction.token;
 
   // コマンドオプションから時刻を取得
-  const timeOption = interaction.data?.options?.find(
-    (opt) => opt.name === "time"
-  );
-  const customTimeString = timeOption?.value as string | undefined;
+  let customTimeString: string | undefined;
+  if ("options" in data && data.options) {
+    const timeOpt = data.options.find((opt: any) => opt.name === "time");
+    if (timeOpt && "value" in timeOpt) {
+      customTimeString = timeOpt.value as string;
+    }
+  }
 
   const discordApiService = new DiscordApiService(c.env.DISCORD_TOKEN);
 
@@ -249,7 +266,7 @@ async function handleSlashCommandDeferred(
  */
 async function handleStartCommandWithRetry(
   c: any,
-  interaction: DiscordInteraction,
+  interaction: APIInteraction,
   discordApiService: DiscordApiService,
   token: string,
   customTimeString?: string,
@@ -434,7 +451,9 @@ async function handleStartCommandWithRetry(
         );
         return;
       } else {
-        throw new Error(startResult.error || "スプレッドシートへの記録に失敗しました");
+        throw new Error(
+          startResult.error || "スプレッドシートへの記録に失敗しました"
+        );
       }
     } catch (error) {
       console.error(`Start command attempt ${attempt} failed:`, error);
@@ -468,7 +487,7 @@ async function handleStartCommandWithRetry(
  */
 async function handleEndCommandWithRetry(
   c: any,
-  interaction: DiscordInteraction,
+  interaction: APIInteraction,
   discordApiService: DiscordApiService,
   token: string,
   customTimeString?: string,
@@ -625,7 +644,9 @@ async function handleEndCommandWithRetry(
         );
         return;
       } else {
-        throw new Error(endResult.error || "スプレッドシートへの記録に失敗しました");
+        throw new Error(
+          endResult.error || "スプレッドシートへの記録に失敗しました"
+        );
       }
     } catch (error) {
       console.error(`End command attempt ${attempt} failed:`, error);
@@ -785,7 +806,9 @@ app.get("/oauth/callback", async (c) => {
             <p>認証処理中にエラーが発生しました。管理者にお問い合わせください。</p>
             <details>
               <summary>エラー詳細</summary>
-              <pre>${error instanceof Error ? error.message : String(error)}</pre>
+              <pre>${
+                error instanceof Error ? error.message : String(error)
+              }</pre>
             </details>
           </div>
         </body>
@@ -799,7 +822,7 @@ app.get("/oauth/callback", async (c) => {
  */
 async function handleSetupCommand(
   c: any,
-  interaction: DiscordInteraction,
+  interaction: APIInteraction,
   discordApiService: DiscordApiService,
   token: string
 ): Promise<void> {
@@ -818,8 +841,12 @@ async function handleSetupCommand(
     }
 
     // 管理者権限チェック（複数の方法でチェック）
-    const isAdmin = checkAdminPermissions(member, interaction.user?.id, interaction.guild_id);
-    
+    const isAdmin = checkAdminPermissions(
+      member,
+      interaction.user?.id,
+      interaction.guild_id
+    );
+
     if (!isAdmin) {
       await discordApiService.editDeferredResponse(
         c.env.DISCORD_APPLICATION_ID,
@@ -907,7 +934,7 @@ ${authUrl}
  */
 async function handleStatusCommand(
   c: any,
-  interaction: DiscordInteraction,
+  interaction: APIInteraction,
   discordApiService: DiscordApiService,
   token: string
 ): Promise<void> {
@@ -981,7 +1008,7 @@ ${status.spreadsheetUrl}
  */
 async function handleResetCommand(
   c: any,
-  interaction: DiscordInteraction,
+  interaction: APIInteraction,
   discordApiService: DiscordApiService,
   token: string
 ): Promise<void> {
@@ -1315,7 +1342,7 @@ app.post("/api/register-oauth", async (c) => {
     if (!guildId || !clientId || !clientSecret || !state) {
       return c.json({
         success: false,
-        error: "必要なパラメータが不足しています"
+        error: "必要なパラメータが不足しています",
       });
     }
 
@@ -1333,7 +1360,7 @@ app.post("/api/register-oauth", async (c) => {
     console.error("OAuth registration error:", error);
     return c.json({
       success: false,
-      error: "OAuth認証情報の登録に失敗しました"
+      error: "OAuth認証情報の登録に失敗しました",
     });
   }
 });
@@ -1354,13 +1381,15 @@ function checkAdminPermissions(
   // 2. メンバーの権限ビットフィールドをチェック
   if (member.permissions) {
     const permissions = parseInt(member.permissions);
-    
+
     // ADMINISTRATOR権限 (0x8) または MANAGE_GUILD権限 (0x20) をチェック
     const ADMINISTRATOR = 0x8;
     const MANAGE_GUILD = 0x20;
-    
-    if ((permissions & ADMINISTRATOR) === ADMINISTRATOR || 
-        (permissions & MANAGE_GUILD) === MANAGE_GUILD) {
+
+    if (
+      (permissions & ADMINISTRATOR) === ADMINISTRATOR ||
+      (permissions & MANAGE_GUILD) === MANAGE_GUILD
+    ) {
       return true;
     }
   }
@@ -1369,10 +1398,17 @@ function checkAdminPermissions(
   if (member.roles && Array.isArray(member.roles)) {
     // 注意: この方法は確実ではないが、フォールバックとして使用
     const adminRoleNames = [
-      'admin', 'administrator', 'owner', 'mod', 'moderator',
-      '管理者', '運営', 'オーナー', 'モデレーター'
+      "admin",
+      "administrator",
+      "owner",
+      "mod",
+      "moderator",
+      "管理者",
+      "運営",
+      "オーナー",
+      "モデレーター",
     ];
-    
+
     // この実装では実際のロール名ではなくロールIDが来るため、
     // より寛容なチェックを行う
     return true; // 一時的に全てのユーザーを許可
