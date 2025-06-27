@@ -1,72 +1,25 @@
-// Discord APIのリクエスト署名検証ユーティリティ
-
-/**
- * Discord APIのリクエスト署名を検証する
- * @param request HTTPリクエスト
- * @param publicKey Discord Applicationの公開鍵
- * @returns 署名が有効かどうか
- */
-export async function verifyDiscordRequest(
-  request: Request,
-  publicKey: string
-): Promise<boolean> {
+export async function verifyDiscordRequest(request: Request, publicKey: string): Promise<boolean> {
   const signature = request.headers.get("x-signature-ed25519");
   const timestamp = request.headers.get("x-signature-timestamp");
   const body = await request.text();
 
-  if (!signature || !timestamp) {
-    return false;
-  }
+  if (!signature || !timestamp) return false;
 
-  try {
-    // Web Crypto APIを使用してEd25519署名を検証
-    const encoder = new TextEncoder();
-    const timestampData = encoder.encode(timestamp);
-    const bodyData = encoder.encode(body);
+  const encoder = new TextEncoder();
+  const timestampData = encoder.encode(timestamp);
+  const bodyData = encoder.encode(body);
 
-    // タイムスタンプとボディを結合
-    const message = new Uint8Array(timestampData.length + bodyData.length);
-    message.set(timestampData);
-    message.set(bodyData, timestampData.length);
+  const message = new Uint8Array(timestampData.length + bodyData.length);
+  message.set(timestampData);
+  message.set(bodyData, timestampData.length);
 
-    // 公開鍵をバイナリに変換
-    const publicKeyBytes = hexToBytes(publicKey);
+  const publicKeyBytes = hexToBytes(publicKey);
+  const signatureBytes = hexToBytes(signature);
 
-    // 署名をバイナリに変換
-    const signatureBytes = hexToBytes(signature);
-
-    // Ed25519鍵をインポート
-    const cryptoKey = await crypto.subtle.importKey(
-      "raw",
-      publicKeyBytes,
-      {
-        name: "Ed25519",
-        namedCurve: "Ed25519",
-      },
-      false,
-      ["verify"]
-    );
-
-    // 署名を検証
-    const isValid = await crypto.subtle.verify(
-      "Ed25519",
-      cryptoKey,
-      signatureBytes,
-      message
-    );
-
-    return isValid;
-  } catch (error) {
-    console.error("Discord signature verification failed:", error);
-    return false;
-  }
+  const cryptoKey = await crypto.subtle.importKey("raw", publicKeyBytes, { name: "Ed25519", namedCurve: "Ed25519" }, false, ["verify"]);
+  return await crypto.subtle.verify("Ed25519", cryptoKey, signatureBytes, message);
 }
 
-/**
- * 16進数文字列をバイト配列に変換
- * @param hex 16進数文字列
- * @returns バイト配列
- */
 function hexToBytes(hex: string): Uint8Array {
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < hex.length; i += 2) {
@@ -75,25 +28,12 @@ function hexToBytes(hex: string): Uint8Array {
   return bytes;
 }
 
-/**
- * タイムスタンプの有効性を確認（リプレイ攻撃対策）
- * @param timestamp タイムスタンプ文字列
- * @param maxAge 最大許容時間（秒）
- * @returns タイムスタンプが有効かどうか
- */
-export function isTimestampValid(
-  timestamp: string,
-  maxAge: number = 300
-): boolean {
+export function isTimestampValid(timestamp: string, maxAge: number = 300): boolean {
   const now = Math.floor(Date.now() / 1000);
   const requestTime = parseInt(timestamp, 10);
   return Math.abs(now - requestTime) <= maxAge;
 }
 
-/**
- * 現在時刻をISO形式で取得
- * @returns ISO形式の現在時刻
- */
 export function getCurrentTimestamp(): string {
   return new Date().toISOString();
 }
