@@ -1,9 +1,3 @@
-/**
- * 選択肢B: 各サーバー管理者個別OAuth認証方式
- * 各サーバーの管理者が自分のGoogleアカウントで認証し、
- * Botが各サーバー専用のトークンを暗号化して管理する方式
- */
-
 import { SetupResult, Bindings, GoogleOAuthTokens } from "./types";
 import { SheetsService } from './sheets-service';
 import { ServerConfigService } from './server-config-service';

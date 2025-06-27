@@ -1,28 +1,5 @@
 import { Bindings } from "./types";
-
-/**
- * Discord API関連の型定義
- */
-interface DiscordChannel {
-  id: string;
-  type: number;
-  guild_id?: string;
-  position?: number;
-  permission_overwrites?: any[];
-  name?: string;
-  topic?: string;
-  nsfw?: boolean;
-  last_message_id?: string;
-  bitrate?: number;
-  user_limit?: number;
-  rate_limit_per_user?: number;
-  recipients?: any[];
-  icon?: string;
-  owner_id?: string;
-  application_id?: string;
-  parent_id?: string;
-  last_pin_timestamp?: string;
-}
+import { APIChannel, ChannelType, MessageFlags } from "discord-api-types/v10";
 
 /**
  * Discord API サービスクラス
@@ -41,7 +18,7 @@ export class DiscordApiService {
    * @param channelId Discord チャンネルID
    * @returns チャンネル情報
    */
-  async getChannel(channelId: string): Promise<DiscordChannel | null> {
+  async getChannel(channelId: string): Promise<APIChannel | null> {
     try {
       console.log("Discord API: Getting channel info for", channelId);
 
@@ -66,7 +43,7 @@ export class DiscordApiService {
         return null;
       }
 
-      const channel = (await response.json()) as DiscordChannel;
+      const channel = (await response.json()) as APIChannel;
       console.log("Channel info retrieved:", {
         id: channel.id,
         name: channel.name,
@@ -108,20 +85,21 @@ export class DiscordApiService {
    * @param channelType Discord チャンネルタイプ
    * @returns チャンネルタイプの説明
    */
-  getChannelTypeDescription(channelType: number): string {
-    const channelTypes: { [key: number]: string } = {
-      0: "テキストチャンネル",
-      1: "DMチャンネル",
-      2: "ボイスチャンネル",
-      3: "グループDM",
-      4: "カテゴリ",
-      5: "アナウンスチャンネル",
-      10: "アナウンススレッド",
-      11: "パブリックスレッド",
-      12: "プライベートスレッド",
-      13: "ステージチャンネル",
-      14: "ディレクトリ",
-      15: "フォーラムチャンネル",
+  getChannelTypeDescription(channelType: ChannelType): string {
+    const channelTypes: { [key in ChannelType]: string } = {
+      [ChannelType.GuildText]: "テキストチャンネル",
+      [ChannelType.DM]: "DMチャンネル",
+      [ChannelType.GuildVoice]: "ボイスチャンネル",
+      [ChannelType.GroupDM]: "グループDM",
+      [ChannelType.GuildCategory]: "カテゴリ",
+      [ChannelType.GuildAnnouncement]: "アナウンスチャンネル",
+      [ChannelType.AnnouncementThread]: "アナウンススレッド",
+      [ChannelType.PublicThread]: "パブリックスレッド",
+      [ChannelType.PrivateThread]: "プライベートスレッド",
+      [ChannelType.GuildStageVoice]: "ステージチャンネル",
+      [ChannelType.GuildDirectory]: "ディレクトリ",
+      [ChannelType.GuildForum]: "フォーラムチャンネル",
+      [ChannelType.GuildMedia]: "メディアチャンネル",
     };
 
     return channelTypes[channelType] || "不明なチャンネル";
@@ -147,7 +125,7 @@ export class DiscordApiService {
     };
 
     if (ephemeral) {
-      payload.flags = 64; // EPHEMERAL
+      payload.flags = MessageFlags.Ephemeral;
     }
 
     try {
@@ -155,7 +133,7 @@ export class DiscordApiService {
       console.log("Application ID:", applicationId);
       console.log("Token length:", token?.length || 0);
       console.log("Edit URL:", editUrl);
-      
+
       const response = await fetch(editUrl, {
         method: "PATCH",
         headers: {
@@ -168,7 +146,10 @@ export class DiscordApiService {
         const errorText = await response.text();
         console.error("Failed to edit deferred response:", errorText);
         console.error("Response status:", response.status);
-        console.error("Response headers:", Object.fromEntries(response.headers.entries()));
+        console.error(
+          "Response headers:",
+          Object.fromEntries(response.headers.entries())
+        );
         throw new Error(`Discord API error: ${response.status} - ${errorText}`);
       }
 
@@ -199,7 +180,7 @@ export class DiscordApiService {
     };
 
     if (ephemeral) {
-      payload.flags = 64; // EPHEMERAL
+      payload.flags = MessageFlags.Ephemeral;
     }
 
     try {
@@ -208,7 +189,7 @@ export class DiscordApiService {
       console.log("Application ID:", applicationId);
       console.log("Token length:", token?.length || 0);
       console.log("Payload:", JSON.stringify(payload));
-      
+
       const response = await fetch(followupUrl, {
         method: "POST",
         headers: {
@@ -246,7 +227,7 @@ export class DiscordApiService {
       console.log("Delete URL:", deleteUrl);
       console.log("Application ID:", applicationId);
       console.log("Token length:", token?.length || 0);
-      
+
       const response = await fetch(deleteUrl, {
         method: "DELETE",
       });
