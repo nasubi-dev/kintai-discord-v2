@@ -14,185 +14,77 @@ export class OAuthService {
     this.cryptoService = new CryptoService(env.ENCRYPTION_KEY);
   }
 
-  /**
-   * Step 1: 動的OAuth認証URLを生成
-   * 管理者が自分のGoogleアカウントで認証するためのURL
-   * 
-   * 重要: この方式では各管理者が事前にGoogle Cloud Projectを作成する必要がある
-   */
   async generateAuthUrl(guildId: string, userId: string): Promise<string> {
-    try {
-      // 認証状態を一時保存（10分間有効）
-      const state = crypto.randomUUID();
-      const authData = {
-        guildId,
-        userId,
-        timestamp: Date.now(),
-      };
+    const state = crypto.randomUUID();
+    const authData = { guildId, userId, timestamp: Date.now() };
 
-      await this.kv.put(
-        `oauth_state:${state}`,
-        JSON.stringify(authData),
-        { expirationTtl: 600 } // 10分
-      );
-
-      // 管理者に送信するメッセージ（セットアップガイド付き）
-      const setupGuideUrl = this.generateSetupGuideUrl(guildId, state);
-      
-      return setupGuideUrl;
-    } catch (error) {
-      console.error('Auth URL generation error:', error);
-      throw new Error('認証URLの生成に失敗しました');
-    }
+    await this.kv.put(`oauth_state:${state}`, JSON.stringify(authData), { expirationTtl: 600 });
+    return this.generateSetupGuideUrl(guildId, state);
   }
 
-  /**
-   * Step 2: セットアップガイドページのURL生成
-   * 管理者がGoogle Cloud Projectを作成するためのガイド
-   */
   private generateSetupGuideUrl(guildId: string, state: string): string {
-    const params = new URLSearchParams({
-      guild: guildId,
-      state: state,
-      type: 'oauth_setup'
-    });
-
+    const params = new URLSearchParams({ guild: guildId, state: state, type: 'oauth_setup' });
     return `https://kintai-discord-v2.r916nis1748.workers.dev/setup-guide?${params.toString()}`;
   }
 
-  /**
-   * Step 3: 管理者がGoogle認証情報を登録
-   * 管理者が自分のGoogle Cloud Projectで作成した認証情報を登録
-   */
-  async registerOAuthCredentials(
-    guildId: string,
-    userId: string,
-    clientId: string,
-    clientSecret: string,
-    state: string
-  ): Promise<{ success: boolean; authUrl?: string; error?: string }> {
-    try {
-      // 状態確認
-      const authDataStr = await this.kv.get(`oauth_state:${state}`);
-      if (!authDataStr) {
-        return {
-          success: false,
-          error: '認証セッションが無効または期限切れです'
-        };
-      }
-
-      // 認証情報を一時保存（暗号化）
-      const encryptedCredentials = await this.cryptoService.encrypt(JSON.stringify({
-        clientId,
-        clientSecret,
-        guildId,
-        userId
-      }));
-
-      const tempKey = `temp_oauth:${state}`;
-      await this.kv.put(tempKey, encryptedCredentials, { expirationTtl: 3600 }); // 1時間
-
-      // 実際のOAuth URLを生成
-      const redirectUri = `https://kintai-discord-v2.r916nis1748.workers.dev/oauth/callback`;
-      const params = new URLSearchParams({
-        response_type: 'code',
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        scope: 'https://www.googleapis.com/auth/spreadsheets',
-        state: state,
-        access_type: 'offline',
-        prompt: 'consent'
-      });
-
-      const authUrl = `https://accounts.google.com/o/oauth2/auth?${params.toString()}`;
-
-      return {
-        success: true,
-        authUrl: authUrl
-      };
-    } catch (error) {
-      console.error('OAuth credentials registration error:', error);
-      return {
-        success: false,
-        error: '認証情報の登録に失敗しました'
-      };
+  async registerOAuthCredentials(guildId: string, userId: string, clientId: string, clientSecret: string, state: string): Promise<{ success: boolean; authUrl?: string; error?: string }> {
+    const authDataStr = await this.kv.get(`oauth_state:${state}`);
+    if (!authDataStr) {
+      return { success: false, error: '認証セッションが無効または期限切れです' };
     }
+
+    const encryptedCredentials = await this.cryptoService.encrypt(JSON.stringify({ clientId, clientSecret, guildId, userId }));
+    await this.kv.put(`temp_oauth:${state}`, encryptedCredentials, { expirationTtl: 3600 });
+
+    const redirectUri = `https://kintai-discord-v2.r916nis1748.workers.dev/oauth/callback`;
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      scope: 'https://www.googleapis.com/auth/spreadsheets',
+      state: state,
+      access_type: 'offline',
+      prompt: 'consent'
+    });
+
+    return { success: true, authUrl: `https://accounts.google.com/o/oauth2/auth?${params.toString()}` };
   }
 
-  /**
-   * Step 4: OAuth コールバック処理
-   * 管理者の認証後、アクセストークンを取得してサーバー設定として保存
-   */
   async handleCallback(code: string, state: string): Promise<SetupResult> {
-    try {
-      // 一時保存された認証情報を取得
-      const tempKey = `temp_oauth:${state}`;
-      const encryptedCredentials = await this.kv.get(tempKey);
-      
-      if (!encryptedCredentials) {
-        return {
-          success: false,
-          error: '認証セッションが見つかりません'
-        };
-      }
-
-      // 認証情報を復号化
-      const credentialsStr = await this.cryptoService.decrypt(encryptedCredentials);
-      const credentials = JSON.parse(credentialsStr);
-
-      // トークン交換
-      const tokenData = await this.exchangeCodeForTokens(
-        code,
-        credentials.clientId,
-        credentials.clientSecret
-      );
-
-      if (!tokenData.success) {
-        return {
-          success: false,
-          error: tokenData.error || 'トークン取得に失敗しました'
-        };
-      }
-
-      // スプレッドシート作成（管理者のアカウントに）
-      const sheetsService = new SheetsService(this.env, tokenData.tokens!.access_token);
-      const spreadsheetResult = await sheetsService.createKintaiSpreadsheet(credentials.guildId);
-      
-      if (!spreadsheetResult.success) {
-        return {
-          success: false,
-          error: 'スプレッドシートの作成に失敗しました'
-        };
-      }
-
-      // サーバー設定として保存（全て暗号化）
-      const serverConfigService = new ServerConfigService(this.env);
-      await serverConfigService.saveServerConfig(
-        credentials.guildId,
-        credentials.userId,
-        tokenData.tokens!,
-        spreadsheetResult.spreadsheetId!,
-        spreadsheetResult.spreadsheetUrl!
-      );
-
-      // 一時データを削除
-      await this.kv.delete(`oauth_state:${state}`);
-      await this.kv.delete(tempKey);
-
-      return {
-        success: true,
-        guildId: credentials.guildId,
-        spreadsheetUrl: spreadsheetResult.spreadsheetUrl,
-        message: '設定が完了しました！管理者のGoogleアカウントにスプレッドシートが作成されました。'
-      };
-
-    } catch (error) {
-      console.error('OAuth callback error:', error);
-      return {
-        success: false,
-        error: 'OAuth認証処理中にエラーが発生しました'
-      };
+    const tempKey = `temp_oauth:${state}`;
+    const encryptedCredentials = await this.kv.get(tempKey);
+    
+    if (!encryptedCredentials) {
+      return { success: false, error: '認証セッションが見つかりません' };
     }
+
+    const credentialsStr = await this.cryptoService.decrypt(encryptedCredentials);
+    const credentials = JSON.parse(credentialsStr);
+
+    const tokenData = await this.exchangeCodeForTokens(code, credentials.clientId, credentials.clientSecret);
+    if (!tokenData.success) {
+      return { success: false, error: tokenData.error || 'トークン取得に失敗しました' };
+    }
+
+    const sheetsService = new SheetsService(this.env, tokenData.tokens!.access_token);
+    const spreadsheetResult = await sheetsService.createKintaiSpreadsheet(credentials.guildId);
+    
+    if (!spreadsheetResult.success) {
+      return { success: false, error: 'スプレッドシートの作成に失敗しました' };
+    }
+
+    const serverConfigService = new ServerConfigService(this.env);
+    await serverConfigService.saveServerConfig(credentials.guildId, credentials.userId, tokenData.tokens!, spreadsheetResult.spreadsheetId!, spreadsheetResult.spreadsheetUrl!);
+
+    await this.kv.delete(`oauth_state:${state}`);
+    await this.kv.delete(tempKey);
+
+    return {
+      success: true,
+      guildId: credentials.guildId,
+      spreadsheetUrl: spreadsheetResult.spreadsheetUrl,
+      message: '設定が完了しました！管理者のGoogleアカウントにスプレッドシートが作成されました。'
+    };
   }
 
   /**
