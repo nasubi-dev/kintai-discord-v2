@@ -1,0 +1,251 @@
+import { Bindings } from "./types";
+
+/**
+ * Discord API関連の型定義
+ */
+interface DiscordChannel {
+  id: string;
+  type: number;
+  guild_id?: string;
+  position?: number;
+  permission_overwrites?: any[];
+  name?: string;
+  topic?: string;
+  nsfw?: boolean;
+  last_message_id?: string;
+  bitrate?: number;
+  user_limit?: number;
+  rate_limit_per_user?: number;
+  recipients?: any[];
+  icon?: string;
+  owner_id?: string;
+  application_id?: string;
+  parent_id?: string;
+  last_pin_timestamp?: string;
+}
+
+/**
+ * Discord API サービスクラス
+ * チャンネル情報の取得などを行う
+ */
+export class DiscordApiService {
+  private botToken: string;
+  private baseUrl = "https://discord.com/api/v10";
+
+  constructor(botToken: string) {
+    this.botToken = botToken;
+  }
+
+  /**
+   * チャンネル情報を取得
+   * @param channelId Discord チャンネルID
+   * @returns チャンネル情報
+   */
+  async getChannel(channelId: string): Promise<DiscordChannel | null> {
+    try {
+      console.log("Discord API: Getting channel info for", channelId);
+
+      const response = await fetch(`${this.baseUrl}/channels/${channelId}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bot ${this.botToken}`,
+          "Content-Type": "application/json",
+          "User-Agent":
+            "Discord勤怠管理ボット (https://github.com/your-repo, 1.0.0)",
+        },
+      });
+
+      if (!response.ok) {
+        console.error(
+          "Discord API error:",
+          response.status,
+          response.statusText
+        );
+        const errorText = await response.text();
+        console.error("Error details:", errorText);
+        return null;
+      }
+
+      const channel = (await response.json()) as DiscordChannel;
+      console.log("Channel info retrieved:", {
+        id: channel.id,
+        name: channel.name,
+        type: channel.type,
+      });
+
+      return channel;
+    } catch (error) {
+      console.error("Failed to get channel info:", error);
+      return null;
+    }
+  }
+
+  /**
+   * チャンネル名を取得（フォールバック付き）
+   * @param channelId Discord チャンネルID
+   * @returns チャンネル名
+   */
+  async getChannelName(channelId: string): Promise<string> {
+    try {
+      const channel = await this.getChannel(channelId);
+
+      if (channel && channel.name) {
+        return channel.name;
+      }
+
+      // フォールバック: チャンネル名が取得できない場合
+      console.warn("Channel name not available, using fallback");
+      return `channel-${channelId.slice(-6)}`;
+    } catch (error) {
+      console.error("Error getting channel name:", error);
+      // エラー時のフォールバック
+      return `channel-${channelId.slice(-6)}`;
+    }
+  }
+
+  /**
+   * チャンネルタイプを判定
+   * @param channelType Discord チャンネルタイプ
+   * @returns チャンネルタイプの説明
+   */
+  getChannelTypeDescription(channelType: number): string {
+    const channelTypes: { [key: number]: string } = {
+      0: "テキストチャンネル",
+      1: "DMチャンネル",
+      2: "ボイスチャンネル",
+      3: "グループDM",
+      4: "カテゴリ",
+      5: "アナウンスチャンネル",
+      10: "アナウンススレッド",
+      11: "パブリックスレッド",
+      12: "プライベートスレッド",
+      13: "ステージチャンネル",
+      14: "ディレクトリ",
+      15: "フォーラムチャンネル",
+    };
+
+    return channelTypes[channelType] || "不明なチャンネル";
+  }
+
+  /**
+   * Deferred Response（遅延応答）の編集を行う
+   * 通信環境が悪い場合でもバックグラウンドで結果を送信
+   * @param applicationId Discord Application ID
+   * @param token インタラクショントークン
+   * @param content 送信するメッセージ内容
+   */
+  async editDeferredResponse(
+    applicationId: string,
+    token: string,
+    content: string
+  ): Promise<void> {
+    const editUrl = `${this.baseUrl}/webhooks/${applicationId}/${token}/messages/@original`;
+
+    const payload = {
+      content: content,
+    };
+
+    try {
+      console.log("Discord API: Editing deferred response...");
+      const response = await fetch(editUrl, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bot ${this.botToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Failed to edit deferred response:", errorText);
+        throw new Error(`Discord API error: ${response.status} - ${errorText}`);
+      }
+
+      console.log("Discord API: Deferred response edited successfully");
+    } catch (error) {
+      console.error("Error editing deferred response:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * フォローアップメッセージを送信する
+   * @param applicationId Discord Application ID
+   * @param token インタラクショントークン
+   * @param content 送信するメッセージ内容
+   * @param ephemeral 本人のみに表示するかどうか
+   */
+  async createFollowupMessage(
+    applicationId: string,
+    token: string,
+    content: string,
+    ephemeral: boolean = false
+  ): Promise<void> {
+    const followupUrl = `${this.baseUrl}/webhooks/${applicationId}/${token}`;
+
+    const payload: any = {
+      content: content,
+    };
+
+    if (ephemeral) {
+      payload.flags = 64; // EPHEMERAL
+    }
+
+    try {
+      console.log("Discord API: Creating followup message...");
+      const response = await fetch(followupUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bot ${this.botToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Failed to create followup message:", errorText);
+        throw new Error(`Discord API error: ${response.status} - ${errorText}`);
+      }
+
+      console.log("Discord API: Followup message created successfully");
+    } catch (error) {
+      console.error("Error creating followup message:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * 元のDeferred Responseを削除する
+   * @param applicationId Discord Application ID
+   * @param token インタラクショントークン
+   */
+  async deleteOriginalResponse(
+    applicationId: string,
+    token: string
+  ): Promise<void> {
+    const deleteUrl = `${this.baseUrl}/webhooks/${applicationId}/${token}/messages/@original`;
+
+    try {
+      console.log("Discord API: Deleting original response...");
+      const response = await fetch(deleteUrl, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bot ${this.botToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Failed to delete original response:", errorText);
+        throw new Error(`Discord API error: ${response.status} - ${errorText}`);
+      }
+
+      console.log("Discord API: Original response deleted successfully");
+    } catch (error) {
+      console.error("Error deleting original response:", error);
+      throw error;
+    }
+  }
+}
