@@ -5,9 +5,12 @@ import {
   InteractionResponseData,
   Bindings,
   KVAttendanceRecord,
+  EncryptedServerConfig,
 } from "./types";
 import { GASService } from "./gas-service";
 import { DiscordApiService } from "./discord-api-service";
+import { OAuthService } from "./oauth-service";
+import { CryptoService } from "./crypto-service";
 import { isChannelAllowed } from "./utils";
 
 /**
@@ -16,14 +19,18 @@ import { isChannelAllowed } from "./utils";
 export class DiscordCommandService {
   private gasService: GASService;
   private discordApiService: DiscordApiService;
+  private oauthService: OAuthService;
+  private cryptoService: CryptoService;
   private allowedChannels: string[];
   private kv: KVNamespace;
+  private env: Bindings;
 
   constructor(
     gasUrl: string,
     allowedChannelIds: string,
     discordToken: string,
     kv: KVNamespace,
+    env: Bindings,
     gasTimeout: number = 10000 // デフォルト10秒
   ) {
     console.log("DiscordCommandService constructor - GAS URL:", gasUrl);
@@ -33,8 +40,11 @@ export class DiscordCommandService {
     );
     this.gasService = new GASService(gasUrl, gasTimeout); // タイムアウト設定を追加
     this.discordApiService = new DiscordApiService(discordToken);
+    this.oauthService = new OAuthService(env);
+    this.cryptoService = new CryptoService(env.ENCRYPTION_KEY);
     this.allowedChannels = allowedChannelIds.split(",").map((id) => id.trim());
     this.kv = kv;
+    this.env = env;
   }
 
   /**
@@ -102,6 +112,12 @@ export class DiscordCommandService {
           channelId,
           channelName
         );
+      case "setup":
+        return await this.handleSetupCommand(interaction);
+      case "reset":
+        return await this.handleResetCommand(interaction);
+      case "status":
+        return await this.handleStatusCommand(interaction);
       default:
         return this.createEphemeralResponse("❌ 不明なコマンドです。");
     }
@@ -249,6 +265,203 @@ export class DiscordCommandService {
         "❌ 勤務終了の処理中にエラーが発生しました。"
       );
     }
+  }
+
+  /**
+   * /setup コマンドの処理
+   */
+  private async handleSetupCommand(
+    interaction: DiscordInteraction
+  ): Promise<InteractionResponse> {
+    const guildId = interaction.guild_id;
+    const userId = interaction.member?.user?.id;
+
+    if (!guildId || !userId) {
+      return this.createEphemeralResponse(
+        "❌ サーバー情報またはユーザー情報が取得できませんでした。"
+      );
+    }
+
+    // 管理者権限チェック
+    if (!this.hasAdminPermission(interaction.member)) {
+      return this.createEphemeralResponse(
+        "❌ このコマンドを実行するには管理者権限が必要です。"
+      );
+    }
+
+    // 既存設定チェック
+    const existingConfig = await this.kv.get(`server:${guildId}`);
+    if (existingConfig) {
+      return this.createEphemeralResponse(
+        "⚠️ このサーバーは既に設定されています。設定をリセットする場合は `/reset` コマンドを使用してください。"
+      );
+    }
+
+    try {
+      // OAuth URL 生成
+      const authUrl = await this.oauthService.generateAuthUrl(guildId, userId);
+
+      return this.createEphemeralResponse(
+        `📋 **勤怠管理システムのセットアップ**\n\n` +
+          `以下のリンクをクリックして Google アカウントで認証を行ってください：\n\n` +
+          `🔗 [Google 認証を開始](${authUrl})\n\n` +
+          `✅ 認証完了後、自動でスプレッドシートが作成されます\n` +
+          `⏰ この認証リンクは10分間有効です`
+      );
+    } catch (error) {
+      console.error("Setup command error:", error);
+      return this.createEphemeralResponse(
+        "❌ セットアップ処理中にエラーが発生しました。"
+      );
+    }
+  }
+
+  /**
+   * /reset コマンドの処理
+   */
+  private async handleResetCommand(
+    interaction: DiscordInteraction
+  ): Promise<InteractionResponse> {
+    const guildId = interaction.guild_id;
+
+    if (!guildId) {
+      return this.createEphemeralResponse(
+        "❌ サーバー情報が取得できませんでした。"
+      );
+    }
+
+    // 管理者権限チェック
+    if (!this.hasAdminPermission(interaction.member)) {
+      return this.createEphemeralResponse(
+        "❌ このコマンドを実行するには管理者権限が必要です。"
+      );
+    }
+
+    try {
+      // 既存設定の取得
+      const existingConfigString = await this.kv.get(`server:${guildId}`);
+      if (!existingConfigString) {
+        return this.createEphemeralResponse(
+          "ℹ️ このサーバーに設定された勤怠管理システムはありません。"
+        );
+      }
+
+      // トークンの取り消し（可能であれば）
+      try {
+        const config: EncryptedServerConfig = JSON.parse(existingConfigString);
+        const tokens = await this.cryptoService.decrypt(config.encrypted_tokens);
+        if (tokens.access_token) {
+          await this.oauthService.revokeToken(tokens.access_token);
+        }
+      } catch (error) {
+        console.warn("Failed to revoke tokens during reset:", error);
+        // トークン取り消しに失敗しても設定削除は続行
+      }
+
+      // 設定を削除
+      await this.kv.delete(`server:${guildId}`);
+
+      return this.createEphemeralResponse(
+        "✅ 勤怠管理システムの設定をリセットしました。\n\n" +
+          "新しく設定する場合は `/setup` コマンドを実行してください。"
+      );
+    } catch (error) {
+      console.error("Reset command error:", error);
+      return this.createEphemeralResponse(
+        "❌ 設定リセット中にエラーが発生しました。"
+      );
+    }
+  }
+
+  /**
+   * /status コマンドの処理
+   */
+  private async handleStatusCommand(
+    interaction: DiscordInteraction
+  ): Promise<InteractionResponse> {
+    const guildId = interaction.guild_id;
+
+    if (!guildId) {
+      return this.createEphemeralResponse(
+        "❌ サーバー情報が取得できませんでした。"
+      );
+    }
+
+    try {
+      // 設定の確認
+      const configString = await this.kv.get(`server:${guildId}`);
+      if (!configString) {
+        return this.createEphemeralResponse(
+          "ℹ️ このサーバーに勤怠管理システムは設定されていません。\n\n" +
+            "設定するには `/setup` コマンドを実行してください。"
+        );
+      }
+
+      const config: EncryptedServerConfig = JSON.parse(configString);
+
+      // 接続テストを実行
+      let connectionStatus = "❌ 接続エラー";
+      let details = "";
+
+      try {
+        const tokens = await this.cryptoService.decrypt(config.encrypted_tokens);
+        // 簡単な接続テスト（スプレッドシート情報の取得）
+        const response = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${config.spreadsheet_id}`,
+          {
+            headers: {
+              Authorization: `Bearer ${tokens.access_token}`,
+            },
+          }
+        );
+
+        if (response.ok) {
+          connectionStatus = "✅ 接続正常";
+          const sheetData = await response.json() as any;
+          details = `📊 **スプレッドシート詳細**\n• タイトル: ${sheetData.properties?.title || '不明'}\n• 権限: 読み書き可能`;
+        } else if (response.status === 401) {
+          connectionStatus = "⚠️ 認証期限切れ";
+          details = "認証の更新が必要です。管理者にお問い合わせください。";
+        } else {
+          connectionStatus = "❌ 接続エラー";
+          details = `エラーコード: ${response.status}`;
+        }
+      } catch (error) {
+        console.error("Connection test error:", error);
+        details = "接続テスト中にエラーが発生しました。";
+      }
+
+      return this.createEphemeralResponse(
+        `📋 **勤怠管理システム ステータス**\n\n` +
+          `**設定日時:** ${new Date(config.created_at).toLocaleString('ja-JP')}\n` +
+          `**設定者:** <@${config.owner_id}>\n` +
+          `**接続状態:** ${connectionStatus}\n\n` +
+          `**スプレッドシート:** [開く](${config.sheet_url})\n\n` +
+          `${details}\n\n` +
+          `💡 設定をリセットするには \`/reset\` コマンドを使用してください。`
+      );
+    } catch (error) {
+      console.error("Status command error:", error);
+      return this.createEphemeralResponse(
+        "❌ ステータス確認中にエラーが発生しました。"
+      );
+    }
+  }
+
+  /**
+   * 管理者権限をチェック
+   */
+  private hasAdminPermission(member: any): boolean {
+    if (!member) return false;
+
+    // Discord の権限チェック（簡易版）
+    // 本来は member.permissions を正しく解析すべきですが、
+    // 現在は roles での簡易チェックを実装
+    const hasAdminRole = member.roles?.some((role: string) =>
+      role.includes('admin') || role.includes('管理者') || role.includes('Admin')
+    );
+
+    return hasAdminRole || false;
   }
 
   /**

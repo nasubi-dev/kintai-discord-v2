@@ -3,9 +3,10 @@ export type Bindings = {
   DISCORD_PUBLIC_KEY: string;
   DISCORD_APPLICATION_ID: string;
   DISCORD_TOKEN: string;
-  GAS_WEB_APP_URL: string;
   ALLOWED_CHANNEL_IDS: string;
   KINTAI_DISCORD_KV: KVNamespace;
+  // 暗号化キー
+  ENCRYPTION_KEY: string;
 };
 
 export interface DiscordInteraction {
@@ -181,4 +182,86 @@ export interface KVAttendanceRecord {
 
 export enum MessageFlags {
   EPHEMERAL = 64,
+}
+
+// Google OAuth関連の型定義
+export interface OAuthState {
+  guildId: string;
+  userId: string;
+  timestamp: number;
+}
+
+export interface ServerConfig {
+  spreadsheet_id: string;
+  access_token: string;
+  refresh_token: string;
+  sheet_url: string;
+  owner_id: string;
+  created_at: string;
+}
+
+export interface EncryptedServerConfig {
+  spreadsheet_id: string;
+  encrypted_tokens: string;
+  sheet_url: string;
+  owner_id: string;
+  created_at: string;
+}
+
+export interface GoogleTokens {
+  access_token: string;
+  refresh_token: string;
+  expires_in?: number;
+  token_type?: string;
+}
+
+export interface GoogleSheetsCreateRequest {
+  properties: {
+    title: string;
+    locale: string;
+    timeZone: string;
+  };
+  sheets: Array<{
+    properties: {
+      title: string;
+      gridProperties: {
+        rowCount: number;
+        columnCount: number;
+      };
+    };
+  }>;
+}
+
+// Setup コマンドのレスポンス型
+export interface SetupResult {
+  success: boolean;
+  guildId?: string;
+  error?: string;
+  spreadsheetUrl?: string;
+  message?: string;
+  requiresGASSetup?: boolean;
+}
+
+// Google OAuth 関連の型定義（既存コードとの互換性）
+export interface GoogleOAuthTokens {
+  access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
+  token_type?: string;
+  scope?: string;
+}
+
+export interface GoogleOAuthErrorResponse {
+  error: string;
+  error_description?: string;
+}
+
+export interface GoogleSheetsResponse {
+  spreadsheetId: string;
+  properties: {
+    title: string;
+    locale?: string;
+    timeZone?: string;
+  };
+  sheets?: any[];
 }

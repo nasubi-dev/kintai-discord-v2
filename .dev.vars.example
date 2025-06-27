@@ -1,5 +1,17 @@
+# Discord Bot設定（必須）
 DISCORD_PUBLIC_KEY=your_discord_public_key_here
 DISCORD_APPLICATION_ID=your_discord_application_id_here
 DISCORD_TOKEN=your_discord_bot_token_here
-GAS_WEB_APP_URL=your_gas_web_app_url_here
+
+# 暗号化設定（必須 - 32文字のランダム文字列）
+ENCRYPTION_KEY=your_32_character_encryption_key_here
+
+# チャンネル制限（オプション - * で全チャンネル許可）
 ALLOWED_CHANNEL_IDS=*
+
+# 注意: Google OAuth設定は各サーバー管理者が個別に行うため、
+# Bot開発者は以下の設定は不要です：
+# - GOOGLE_CLIENT_ID
+# - GOOGLE_CLIENT_SECRET  
+# - GOOGLE_REDIRECT_URI
+# - GAS_WEB_APP_URL (レガシー方式のため使用しない)

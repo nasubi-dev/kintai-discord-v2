@@ -137,20 +137,28 @@ export class DiscordApiService {
   async editDeferredResponse(
     applicationId: string,
     token: string,
-    content: string
+    content: string,
+    ephemeral: boolean = false
   ): Promise<void> {
     const editUrl = `${this.baseUrl}/webhooks/${applicationId}/${token}/messages/@original`;
 
-    const payload = {
+    const payload: any = {
       content: content,
     };
 
+    if (ephemeral) {
+      payload.flags = 64; // EPHEMERAL
+    }
+
     try {
       console.log("Discord API: Editing deferred response...");
+      console.log("Application ID:", applicationId);
+      console.log("Token length:", token?.length || 0);
+      console.log("Edit URL:", editUrl);
+      
       const response = await fetch(editUrl, {
         method: "PATCH",
         headers: {
-          Authorization: `Bot ${this.botToken}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
@@ -159,6 +167,8 @@ export class DiscordApiService {
       if (!response.ok) {
         const errorText = await response.text();
         console.error("Failed to edit deferred response:", errorText);
+        console.error("Response status:", response.status);
+        console.error("Response headers:", Object.fromEntries(response.headers.entries()));
         throw new Error(`Discord API error: ${response.status} - ${errorText}`);
       }
 
@@ -194,10 +204,14 @@ export class DiscordApiService {
 
     try {
       console.log("Discord API: Creating followup message...");
+      console.log("Followup URL:", followupUrl);
+      console.log("Application ID:", applicationId);
+      console.log("Token length:", token?.length || 0);
+      console.log("Payload:", JSON.stringify(payload));
+      
       const response = await fetch(followupUrl, {
         method: "POST",
         headers: {
-          Authorization: `Bot ${this.botToken}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
@@ -229,16 +243,18 @@ export class DiscordApiService {
 
     try {
       console.log("Discord API: Deleting original response...");
+      console.log("Delete URL:", deleteUrl);
+      console.log("Application ID:", applicationId);
+      console.log("Token length:", token?.length || 0);
+      
       const response = await fetch(deleteUrl, {
         method: "DELETE",
-        headers: {
-          Authorization: `Bot ${this.botToken}`,
-        },
       });
 
       if (!response.ok) {
         const errorText = await response.text();
         console.error("Failed to delete original response:", errorText);
+        console.error("Response status:", response.status);
         throw new Error(`Discord API error: ${response.status} - ${errorText}`);
       }
 

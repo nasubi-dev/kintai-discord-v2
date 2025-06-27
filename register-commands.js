@@ -54,6 +54,21 @@ async function registerCommands() {
         },
       ],
     },
+    {
+      name: "setup",
+      type: 1, // CHAT_INPUT
+      description: "勤怠管理システムを初期設定します（管理者のみ）",
+    },
+    {
+      name: "status",
+      type: 1, // CHAT_INPUT
+      description: "勤怠管理システムの設定状況を確認します",
+    },
+    {
+      name: "reset",
+      type: 1, // CHAT_INPUT
+      description: "勤怠管理システムの設定をリセットします（管理者のみ）",
+    },
   ];
 
   try {
