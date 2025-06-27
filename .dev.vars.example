@@ -1,0 +1,5 @@
+DISCORD_PUBLIC_KEY=your_discord_public_key_here
+DISCORD_APPLICATION_ID=your_discord_application_id_here
+DISCORD_TOKEN=your_discord_bot_token_here
+GAS_WEB_APP_URL=your_gas_web_app_url_here
+ALLOWED_CHANNEL_IDS=*

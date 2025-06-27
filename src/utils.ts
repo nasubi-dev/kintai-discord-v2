@@ -1,0 +1,225 @@
+// Discord APIのリクエスト署名検証ユーティリティ
+
+/**
+ * Discord APIのリクエスト署名を検証する
+ * @param request HTTPリクエスト
+ * @param publicKey Discord Applicationの公開鍵
+ * @returns 署名が有効かどうか
+ */
+export async function verifyDiscordRequest(
+  request: Request,
+  publicKey: string
+): Promise<boolean> {
+  const signature = request.headers.get("x-signature-ed25519");
+  const timestamp = request.headers.get("x-signature-timestamp");
+  const body = await request.text();
+
+  if (!signature || !timestamp) {
+    return false;
+  }
+
+  try {
+    // Web Crypto APIを使用してEd25519署名を検証
+    const encoder = new TextEncoder();
+    const timestampData = encoder.encode(timestamp);
+    const bodyData = encoder.encode(body);
+
+    // タイムスタンプとボディを結合
+    const message = new Uint8Array(timestampData.length + bodyData.length);
+    message.set(timestampData);
+    message.set(bodyData, timestampData.length);
+
+    // 公開鍵をバイナリに変換
+    const publicKeyBytes = hexToBytes(publicKey);
+
+    // 署名をバイナリに変換
+    const signatureBytes = hexToBytes(signature);
+
+    // Ed25519鍵をインポート
+    const cryptoKey = await crypto.subtle.importKey(
+      "raw",
+      publicKeyBytes,
+      {
+        name: "Ed25519",
+        namedCurve: "Ed25519",
+      },
+      false,
+      ["verify"]
+    );
+
+    // 署名を検証
+    const isValid = await crypto.subtle.verify(
+      "Ed25519",
+      cryptoKey,
+      signatureBytes,
+      message
+    );
+
+    return isValid;
+  } catch (error) {
+    console.error("Discord signature verification failed:", error);
+    return false;
+  }
+}
+
+/**
+ * 16進数文字列をバイト配列に変換
+ * @param hex 16進数文字列
+ * @returns バイト配列
+ */
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+  }
+  return bytes;
+}
+
+/**
+ * タイムスタンプの有効性を確認（リプレイ攻撃対策）
+ * @param timestamp タイムスタンプ文字列
+ * @param maxAge 最大許容時間（秒）
+ * @returns タイムスタンプが有効かどうか
+ */
+export function isTimestampValid(
+  timestamp: string,
+  maxAge: number = 300
+): boolean {
+  const now = Math.floor(Date.now() / 1000);
+  const requestTime = parseInt(timestamp, 10);
+  return Math.abs(now - requestTime) <= maxAge;
+}
+
+/**
+ * 現在時刻をISO形式で取得
+ * @returns ISO形式の現在時刻
+ */
+export function getCurrentTimestamp(): string {
+  return new Date().toISOString();
+}
+
+/**
+ * チャンネルIDが許可リストに含まれているかチェック
+ * @param channelId チャンネルID
+ * @param allowedChannels 許可されたチャンネルIDのリスト
+ * @returns チャンネルが許可されているかどうか
+ */
+export function isChannelAllowed(
+  channelId: string,
+  allowedChannels: string[]
+): boolean {
+  // "*" が設定されている場合はすべてのチャンネルを許可
+  if (allowedChannels.includes("*")) {
+    return true;
+  }
+  return allowedChannels.includes(channelId);
+}
+
+/**
+ * 時刻文字列をパースしてDate オブジェクトを作成（JST基準）
+ * @param timeString 時刻文字列 (例: "09:00", "0900", "19:30", "1930")
+ * @param baseDate 基準日（省略時は今日）
+ * @returns パースされたDate オブジェクト（UTC）
+ */
+export function parseTimeStringToJST(
+  timeString: string,
+  baseDate?: Date
+): Date | null {
+  try {
+    // 基準日を設定（JSTで今日）
+    const base = baseDate || new Date();
+
+    // JSTで日付を作成（UTCから9時間戻す）
+    const jstDate = new Date(base.getTime() + 9 * 60 * 60 * 1000);
+    const year = jstDate.getUTCFullYear();
+    const month = jstDate.getUTCMonth();
+    const day = jstDate.getUTCDate();
+
+    // 時刻文字列をパース
+    let hours: number, minutes: number;
+
+    if (timeString.includes(":")) {
+      // "HH:MM" 形式
+      const parts = timeString.split(":");
+      if (parts.length !== 2) return null;
+
+      hours = parseInt(parts[0], 10);
+      minutes = parseInt(parts[1], 10);
+    } else if (timeString.length === 3 || timeString.length === 4) {
+      // "HMM" または "HHMM" 形式
+      if (timeString.length === 3) {
+        // "HMM" 形式 (例: "900" -> 9:00)
+        hours = parseInt(timeString.substring(0, 1), 10);
+        minutes = parseInt(timeString.substring(1), 10);
+      } else {
+        // "HHMM" 形式 (例: "1900" -> 19:00)
+        hours = parseInt(timeString.substring(0, 2), 10);
+        minutes = parseInt(timeString.substring(2), 10);
+      }
+    } else {
+      return null;
+    }
+
+    // 時刻の有効性をチェック
+    if (
+      isNaN(hours) ||
+      isNaN(minutes) ||
+      hours < 0 ||
+      hours > 23 ||
+      minutes < 0 ||
+      minutes > 59
+    ) {
+      return null;
+    }
+
+    // JSTでDateオブジェクトを作成し、UTCに変換
+    const jstDateTime = new Date(year, month, day, hours, minutes, 0, 0);
+    const utcDateTime = new Date(jstDateTime.getTime() - 9 * 60 * 60 * 1000);
+
+    return utcDateTime;
+  } catch (error) {
+    console.error("Time parsing error:", error);
+    return null;
+  }
+}
+
+/**
+ * 指定された時刻が現在時刻より未来かどうかをチェック（JST基準）
+ * @param targetTime チェック対象の時刻
+ * @returns 未来の時刻の場合 true
+ */
+export function isFutureTime(targetTime: Date): boolean {
+  const now = new Date();
+  return targetTime.getTime() > now.getTime();
+}
+
+/**
+ * 終了時刻が開始時刻より前になっていないかチェック
+ * @param startTime 開始時刻
+ * @param endTime 終了時刻
+ * @returns 終了時刻が開始時刻より前の場合 true
+ */
+export function isEndTimeBeforeStartTime(
+  startTime: Date,
+  endTime: Date
+): boolean {
+  return endTime.getTime() < startTime.getTime();
+}
+
+/**
+ * Date オブジェクトをJST文字列に変換
+ * @param date Date オブジェクト
+ * @returns JST形式の文字列 (yyyy/MM/dd HH:mm:ss)
+ */
+export function formatDateToJST(date: Date): string {
+  const jstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+
+  const year = jstDate.getUTCFullYear();
+  const month = String(jstDate.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(jstDate.getUTCDate()).padStart(2, "0");
+  const hours = String(jstDate.getUTCHours()).padStart(2, "0");
+  const minutes = String(jstDate.getUTCMinutes()).padStart(2, "0");
+  const seconds = String(jstDate.getUTCSeconds()).padStart(2, "0");
+
+  return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
+}

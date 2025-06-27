@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kintai-discord",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-06-22",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+  // 環境変数は .env ファイルまたは wrangler secrets で設定してください
+  // 本番環境では vars セクションではなく secrets を使用することを推奨します
+}
