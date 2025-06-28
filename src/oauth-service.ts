@@ -55,9 +55,13 @@ export class OAuthService {
         credentialsJson
       );
 
+      // 一時的な認証情報
       await this.kv.put(`temp_oauth:${state}`, encryptedCredentials, {
         expirationTtl: 3600,
       });
+
+      // 永続的なOAuth認証情報（リフレッシュ時に使用）
+      await this.kv.put(`oauth_credentials:${guildId}`, encryptedCredentials);
 
       const redirectUri = `https://kintai-discord-v2.r916nis1748.workers.dev/oauth/callback`;
       const params = new URLSearchParams({
@@ -255,8 +259,60 @@ export class OAuthService {
         };
       }
 
+      // OAuth認証情報を取得（setupで保存されている必要がある）
+      const tempOAuthData = await this.kv.get(`oauth_credentials:${guildId}`);
+      if (!tempOAuthData) {
+        return {
+          success: false,
+          error: "OAuth認証情報が見つかりません。再度セットアップが必要です。",
+        };
+      }
+
+      const oauthCredentials = JSON.parse(await this.cryptoService.decrypt(tempOAuthData));
+
       // リフレッシュトークンを使用して新しいアクセストークンを取得
-      // ここでは管理者の認証情報が必要になるため、事前に保存が必要
+      const response = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          client_id: oauthCredentials.clientId,
+          client_secret: oauthCredentials.clientSecret,
+          refresh_token: config.refresh_token,
+          grant_type: "refresh_token",
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Token refresh failed:", {
+          status: response.status,
+          body: errorText,
+        });
+        return {
+          success: false,
+          error: `トークンの更新に失敗しました: ${response.status}`,
+        };
+      }
+
+      const tokens = (await response.json()) as GoogleOAuthTokens;
+
+      // 新しいアクセストークンで設定を更新
+      const updatedTokens = {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token || config.refresh_token, // 新しいリフレッシュトークンがない場合は既存のものを使用
+        expires_in: tokens.expires_in,
+        token_type: tokens.token_type,
+      };
+
+      await serverConfigService.saveServerConfig(
+        guildId,
+        config.owner_id,
+        updatedTokens,
+        config.spreadsheet_id,
+        config.sheet_url
+      );
 
       return { success: true };
     } catch (error) {
