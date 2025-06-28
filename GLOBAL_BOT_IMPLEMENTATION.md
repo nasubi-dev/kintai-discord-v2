@@ -18,7 +18,7 @@ Discord Botを全世界に公開し、各サーバーの管理者が独自のGoo
 - GOOGLE_REDIRECT_URI
 
 # 追加する変数（一般的なOAuth設定）
-+ OAUTH_BASE_URL=https://your-bot-domain.workers.dev
++ OAUTH_BASE_URL=https://kintai-discord.nasubi.dev
 + OAUTH_SCOPES=https://www.googleapis.com/auth/spreadsheets
 ```
 

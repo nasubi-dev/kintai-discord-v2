@@ -30,7 +30,7 @@ export class OAuthService {
       state: state,
       type: "oauth_init",
     });
-    return `https://kintai-discord-v2.r916nis1748.workers.dev/init-guide?${params.toString()}`;
+    return `https://kintai-discord.nasubi.dev/init-guide?${params.toString()}`;
   }
 
   async registerOAuthCredentials(
@@ -63,7 +63,7 @@ export class OAuthService {
       // 永続的なOAuth認証情報（リフレッシュ時に使用）
       await this.kv.put(`oauth_credentials:${guildId}`, encryptedCredentials);
 
-      const redirectUri = `https://kintai-discord-v2.r916nis1748.workers.dev/oauth/callback`;
+      const redirectUri = `https://kintai-discord.nasubi.dev/oauth/callback`;
       const params = new URLSearchParams({
         response_type: "code",
         client_id: clientId,
@@ -192,7 +192,7 @@ export class OAuthService {
           code: code,
           client_id: clientId,
           client_secret: clientSecret,
-          redirect_uri: `https://kintai-discord-v2.r916nis1748.workers.dev/oauth/callback`,
+          redirect_uri: `https://kintai-discord.nasubi.dev/oauth/callback`,
           grant_type: "authorization_code",
         }),
       });
@@ -475,7 +475,7 @@ export const OAUTH_INIT_GUIDE = `
             <li>アプリケーションの種類：「ウェブアプリケーション」</li>
             <li>名前：「勤怠管理Bot」</li>
             <li>承認済みのリダイレクト URI に以下を追加：<br>
-                <code>https://kintai-discord-v2.r916nis1748.workers.dev/oauth/callback</code>
+                <code>https://kintai-discord.nasubi.dev/oauth/callback</code>
             </li>
             <li>「作成」をクリック</li>
         </ol>
