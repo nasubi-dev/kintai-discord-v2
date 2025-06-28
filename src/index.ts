@@ -363,15 +363,10 @@ async function handleStartCommandWithRetry(
         startTime = new Date();
       }
 
-      console.log(
-        `Checking KV for key: ${kvKey} (userId: ${userId}, channelId: ${channelId})`
-      );
+      // KVで重複チェック（高速）
       const existingRecord = await c.env.KINTAI_DISCORD_KV.get(kvKey);
-      console.log(`Existing record found:`, existingRecord ? "YES" : "NO");
 
       if (existingRecord) {
-        console.log(`Existing record data:`, existingRecord);
-
         // 古いレコード（24時間以上前）をチェックして削除
         const recordData = JSON.parse(existingRecord);
         const recordTime = new Date(recordData.startTime);
@@ -380,13 +375,7 @@ async function handleStartCommandWithRetry(
         const hoursDiff = timeDiff / (1000 * 60 * 60);
 
         if (hoursDiff > 24) {
-          console.log(
-            `Found stale record (${hoursDiff.toFixed(
-              1
-            )} hours old), deleting...`
-          );
           await c.env.KINTAI_DISCORD_KV.delete(kvKey);
-          console.log(`Stale record deleted, proceeding with start command`);
         } else {
           // まだ有効なレコードの場合
           await discordApiService.deleteOriginalResponse(
@@ -473,6 +462,7 @@ async function handleStartCommandWithRetry(
         userId,
         username,
         displayChannelName,
+        channelId,
         startTime
       );
 
@@ -491,8 +481,6 @@ async function handleStartCommandWithRetry(
           JSON.stringify(kvRecord),
           { expirationTtl: 86400 } // 24時間
         );
-
-        console.log(`Stored KV record with key: ${kvKey}`, kvRecord);
 
         await discordApiService.editDeferredResponse(
           c.env.DISCORD_APPLICATION_ID,

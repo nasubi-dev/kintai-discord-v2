@@ -1,27 +1,27 @@
 import { GoogleSheetsResponse, GoogleOAuthTokens, Bindings } from "./types";
 
-// スプレッドシートのカラム定義を統一
+// スプレッドシートのカラム定義を統一（新しいテーブル構造に対応）
 const KINTAI_COLUMNS = {
-  DATE: 0, // A: 日付
+  PROJECT: 0, // A: プロジェクト名（チャンネル名）
   USERNAME: 1, // B: ユーザー名
-  USER_ID: 2, // C: ユーザーID
-  PROJECT: 3, // D: プロジェクト名
-  START_TIME: 4, // E: 開始時刻
-  END_TIME: 5, // F: 終了時刻
-  WORK_HOURS: 6, // G: 勤務時間
-  RECORD_ID: 7, // H: 記録ID
+  WORK_HOURS: 2, // C: 差分（労働時間）
+  START_TIME: 3, // D: 開始時刻
+  END_TIME: 4, // E: 終了時刻
+  CHANNEL_ID: 5, // F: channel_id
+  DISCORD_ID: 6, // G: discord_id
+  UUID: 7, // H: uuid
 } as const;
 
-// 統一されたヘッダー定義
+// 統一されたヘッダー定義（新しいテーブル構造に対応）
 const KINTAI_HEADERS = [
-  "日付",
-  "ユーザー名",
-  "ユーザーID",
   "プロジェクト名",
+  "ユーザー名", 
+  "差分",
   "開始時刻",
   "終了時刻",
-  "勤務時間",
-  "記録ID",
+  "channel_id",
+  "discord_id", 
+  "uuid",
 ];
 
 export class SheetsService {
@@ -388,6 +388,7 @@ export class SheetsService {
     userId: string,
     username: string,
     projectName: string,
+    channelId: string,
     startTime: Date
   ): Promise<{ success: boolean; recordId?: string; error?: string }> {
     try {
@@ -408,24 +409,23 @@ export class SheetsService {
         await this.createMonthlySheet(spreadsheetId, sheetName);
       }
 
-      // 日付フォーマット（統一されたJST処理）
-      const dateStr = this.formatDateToJST(startTime);
-      const timeStr = this.formatTimeToJST(startTime);
+      // 日時フォーマット（完全な日時形式）
+      const startTimeStr = this.formatDateTimeToJST(startTime);
 
-      // 記録ID生成
-      const recordId = `${userId}_${Date.now()}`;
+      // 記録ID生成（UUID形式）
+      const recordId = crypto.randomUUID();
 
-      // データを追加（統一されたカラム構造を使用）
+      // データを追加（新しいテーブル構造に対応）
       const values = [
         [
-          dateStr, // A: 日付
+          projectName, // A: プロジェクト名（チャンネル名）
           username, // B: ユーザー名
-          userId, // C: ユーザーID
-          projectName, // D: プロジェクト名
-          timeStr, // E: 開始時刻
-          "", // F: 終了時刻
-          "", // G: 勤務時間
-          recordId, // H: 記録ID
+          "", // C: 差分（終了時に計算される）
+          startTimeStr, // D: 開始時刻
+          "", // E: 終了時刻（空のまま）
+          channelId, // F: channel_id
+          userId, // G: discord_id
+          recordId, // H: uuid
         ],
       ];
 
@@ -473,12 +473,15 @@ export class SheetsService {
       const values = await this.getRange(spreadsheetId, range);
 
       let targetRowIndex = -1;
+      let startTimeStr = "";
+      
       for (let i = 1; i < values.length; i++) {
         // ヘッダー行をスキップ
         const row = values[i];
-        if (row[7] === recordId && row[5] === "") {
-          // 記録IDが一致し、終了時刻が空
+        if (row[KINTAI_COLUMNS.UUID] === recordId && row[KINTAI_COLUMNS.END_TIME] === "") {
+          // UUIDが一致し、終了時刻が空
           targetRowIndex = i + 1; // Google Sheetsは1ベース
+          startTimeStr = row[KINTAI_COLUMNS.START_TIME];
           break;
         }
       }
@@ -490,20 +493,17 @@ export class SheetsService {
         };
       }
 
-      const timeStr = endTime.toLocaleTimeString("ja-JP", {
-        timeZone: "Asia/Tokyo",
-        hour12: false,
-      });
+      // 終了時刻フォーマット
+      const endTimeStr = this.formatDateTimeToJST(endTime);
 
-      // 勤務時間を計算
-      const startTimeStr = values[targetRowIndex - 1][4]; // 開始時刻
-      const workHours = this.calculateWorkHours(startTimeStr, timeStr);
+      // 勤務時間を計算（新しい形式で）
+      const workHours = this.calculateWorkHoursFromDateTime(startTimeStr, endTimeStr);
 
-      // 終了時刻と勤務時間を更新
+      // 終了時刻と勤務時間を更新（新しいカラム位置に対応）
       await this.updateRange(
         spreadsheetId,
-        `${sheetName}!F${targetRowIndex}:G${targetRowIndex}`,
-        [[timeStr, workHours]]
+        `${sheetName}!C${targetRowIndex}:E${targetRowIndex}`, // 差分、開始時刻、終了時刻
+        [[workHours, startTimeStr, endTimeStr]]
       );
 
       return {
@@ -540,6 +540,44 @@ export class SheetsService {
       timeZone: "Asia/Tokyo",
       hour12: false,
     });
+  }
+
+  private formatDateTimeToJST(date: Date): string {
+    return date.toLocaleString("ja-JP", {
+      timeZone: "Asia/Tokyo",
+      year: "numeric",
+      month: "2-digit", 
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+  }
+
+  /**
+   * 勤務時間を計算（日時文字列から）
+   */
+  private calculateWorkHoursFromDateTime(startTimeStr: string, endTimeStr: string): string {
+    try {
+      const startTime = new Date(startTimeStr.replace(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})/, '$1-$2-$3T$4:$5:$6+09:00'));
+      const endTime = new Date(endTimeStr.replace(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})/, '$1-$2-$3T$4:$5:$6+09:00'));
+
+      const diffMs = endTime.getTime() - startTime.getTime();
+      
+      if (diffMs < 0) {
+        return "エラー";
+      }
+
+      const hours = Math.floor(diffMs / (1000 * 60 * 60));
+      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+
+      return `${hours}時間${minutes}分${seconds}秒`;
+    } catch (error) {
+      console.error("Work hours calculation error:", error);
+      return "計算エラー";
+    }
   }
 
   /**
