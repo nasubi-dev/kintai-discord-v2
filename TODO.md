@@ -1,0 +1,4 @@
+- [] 公開Workersの名前をkintai-discord.nasubi.devに変更
+- [] GoogleのOAuthの設定をkintai-discord.nasubi.devに変更
+- [] DiscordのOAuthの設定をkintai-discord.nasubi.devに変更
+- [] Googleに申請してなんていうかわからないページを作成
