@@ -303,6 +303,7 @@ async function handleStartCommandWithRetry(
 ): Promise<void> {
   const userId = interaction.member?.user?.id || interaction.user?.id!;
   const channelId = interaction.channel_id!;
+  const guildId = interaction.guild_id!;
   const username =
     interaction.member?.user?.username ||
     interaction.user?.username ||
@@ -471,7 +472,8 @@ async function handleStartCommandWithRetry(
         serverConfig.access_token,
         serverConfig.spreadsheet_id,
         userId,
-        channelId
+        channelId,
+        guildId
       );
 
       if (activeSessionCheck.error) {
@@ -512,7 +514,8 @@ async function handleStartCommandWithRetry(
         username,
         displayChannelName,
         channelId,
-        startTime
+        startTime,
+        guildId
       );
 
       if (startResult.success) {
@@ -591,6 +594,7 @@ async function handleEndCommandWithRetry(
 ): Promise<void> {
   const userId = interaction.member?.user?.id || interaction.user?.id!;
   const channelId = interaction.channel_id!;
+  const guildId = interaction.guild_id!;
   const username =
     interaction.member?.user?.username ||
     interaction.user?.username ||
@@ -679,7 +683,8 @@ async function handleEndCommandWithRetry(
         serverConfig.access_token,
         serverConfig.spreadsheet_id,
         userId,
-        channelId
+        channelId,
+        guildId
       );
 
       if (activeWorkRecord.error) {
@@ -757,7 +762,8 @@ async function handleEndCommandWithRetry(
         serverConfig.spreadsheet_id,
         userId,
         endTime,
-        activeWorkRecord.recordId
+        activeWorkRecord.recordId,
+        guildId
       );
 
       if (endResult.success) {

@@ -50,9 +50,33 @@ export class SheetsService {
    */
   private async handleApiResponse(
     response: Response,
-    operation: string
+    operation: string,
+    guildId?: string
   ): Promise<any> {
     if (!response.ok) {
+      // 401エラーの場合、トークンリフレッシュを試行
+      if (response.status === 401 && guildId) {
+        console.log(`401エラーが発生しました。トークンをリフレッシュします (guildId: ${guildId})`);
+        
+        const { OAuthService } = await import('./oauth-service');
+        const oauthService = new OAuthService(this.env);
+        const refreshResult = await oauthService.refreshTokens(guildId);
+        
+        if (refreshResult.success) {
+          // 新しいトークンを取得してリトライ
+          const { ServerConfigService } = await import('./server-config-service');
+          const serverConfigService = new ServerConfigService(this.env);
+          const config = await serverConfigService.getServerConfig(guildId);
+          
+          if (config?.access_token) {
+            this.accessToken = config.access_token;
+            throw new Error('RETRY_WITH_NEW_TOKEN'); // リトライを指示
+          }
+        }
+        
+        console.error('トークンリフレッシュに失敗しました:', refreshResult.error);
+      }
+
       const errorText = await response.text();
       let errorDetails = "";
 
@@ -83,36 +107,38 @@ export class SheetsService {
   /**
    * 新しいスプレッドシートを作成
    */
-  async createSpreadsheet(title: string): Promise<GoogleSheetsResponse> {
+  async createSpreadsheet(title: string, guildId?: string): Promise<GoogleSheetsResponse> {
     const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM format
 
-    const response = await fetch(this.baseUrl, {
-      method: "POST",
-      headers: this.getHeaders(),
-      body: JSON.stringify({
-        properties: {
-          title: title || `勤怠ログ管理_kintai-discord`,
-          locale: "ja_JP",
-          timeZone: "Asia/Tokyo",
-        },
-        sheets: [
-          {
-            properties: {
-              title: currentMonth,
-              gridProperties: {
-                rowCount: 1000,
-                columnCount: 10,
+    const data = await this.makeApiRequest(
+      this.baseUrl,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          properties: {
+            title: title || `勤怠ログ管理_kintai-discord`,
+            locale: "ja_JP",
+            timeZone: "Asia/Tokyo",
+          },
+          sheets: [
+            {
+              properties: {
+                title: currentMonth,
+                gridProperties: {
+                  rowCount: 1000,
+                  columnCount: 10,
+                },
               },
             },
-          },
-        ],
-      }),
-    });
-
-    const data = await this.handleApiResponse(response, "スプレッドシート作成");
+          ],
+        }),
+      },
+      "スプレッドシート作成",
+      guildId
+    );
 
     // 統一されたヘッダー行を追加
-    await this.setupKintaiHeaders(data.spreadsheetId, currentMonth);
+    await this.setupKintaiHeaders(data.spreadsheetId, currentMonth, guildId);
 
     return {
       spreadsheetId: data.spreadsheetId,
@@ -127,15 +153,16 @@ export class SheetsService {
   private async setupKintaiHeaders(
     spreadsheetId: string,
     sheetTitle: string,
+    guildId?: string,
     sheetId: number = 0
   ): Promise<void> {
     // ヘッダー行を設定
     await this.updateRange(spreadsheetId, `${sheetTitle}!A1:H1`, [
       KINTAI_HEADERS,
-    ]);
+    ], guildId);
 
     // ヘッダー行のフォーマットを設定
-    await this.formatHeaders(spreadsheetId, sheetId);
+    await this.formatHeaders(spreadsheetId, sheetId, guildId);
   }
 
   /**
@@ -143,7 +170,8 @@ export class SheetsService {
    */
   private async formatHeaders(
     spreadsheetId: string,
-    sheetId: number
+    sheetId: number,
+    guildId?: string
   ): Promise<void> {
     const requests = [
       {
@@ -292,31 +320,15 @@ export class SheetsService {
       },
     ];
 
-    const response = await fetch(
+    await this.makeApiRequest(
       `${this.baseUrl}/${spreadsheetId}:batchUpdate`,
       {
         method: "POST",
-        headers: this.getHeaders(),
         body: JSON.stringify({ requests }),
-      }
+      },
+      "ヘッダーフォーマット設定",
+      guildId
     );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorDetails = "";
-      try {
-        const errorData = JSON.parse(errorText);
-        errorDetails = `Google Sheets API エラー: ${
-          errorData.error?.message || "unknown error"
-        }`;
-      } catch {
-        errorDetails = `HTTP ${response.status}: ${response.statusText}`;
-      }
-
-      throw new Error(
-        `ヘッダーフォーマット設定に失敗しました: ${errorDetails}`
-      );
-    }
   }
 
   /**
@@ -325,18 +337,18 @@ export class SheetsService {
   async appendRow(
     spreadsheetId: string,
     range: string,
-    values: string[][]
+    values: string[][],
+    guildId?: string
   ): Promise<void> {
-    const response = await fetch(
+    await this.makeApiRequest(
       `${this.baseUrl}/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`,
       {
         method: "POST",
-        headers: this.getHeaders(),
         body: JSON.stringify({ values }),
-      }
+      },
+      "行の追加",
+      guildId
     );
-
-    await this.handleApiResponse(response, "行の追加");
   }
 
   /**
@@ -345,33 +357,36 @@ export class SheetsService {
   async updateRange(
     spreadsheetId: string,
     range: string,
-    values: string[][]
+    values: string[][],
+    guildId?: string
   ): Promise<void> {
-    const response = await fetch(
+    await this.makeApiRequest(
       `${this.baseUrl}/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`,
       {
         method: "PUT",
-        headers: this.getHeaders(),
         body: JSON.stringify({ values }),
-      }
+      },
+      "範囲の更新",
+      guildId
     );
-
-    await this.handleApiResponse(response, "範囲の更新");
   }
 
   /**
    * 指定範囲の値を取得
    */
-  async getRange(spreadsheetId: string, range: string): Promise<string[][]> {
-    const response = await fetch(
+  async getRange(
+    spreadsheetId: string,
+    range: string,
+    guildId?: string
+  ): Promise<string[][]> {
+    const data = await this.makeApiRequest(
       `${this.baseUrl}/${spreadsheetId}/values/${range}`,
       {
         method: "GET",
-        headers: this.getHeaders(),
-      }
+      },
+      "範囲の取得",
+      guildId
     );
-
-    const data = await this.handleApiResponse(response, "範囲の取得");
     return data.values || [];
   }
 
@@ -424,32 +439,31 @@ export class SheetsService {
       const spreadsheetTitle = `勤怠ログ管理_kintai-discord`;
 
       // スプレッドシートを作成
-      const response = await fetch(this.baseUrl, {
-        method: "POST",
-        headers: this.getHeaders(),
-        body: JSON.stringify({
-          properties: {
-            title: spreadsheetTitle,
-            locale: "ja_JP",
-            timeZone: "Asia/Tokyo",
-          },
-          sheets: [
-            {
-              properties: {
-                title: currentMonth,
-                gridProperties: {
-                  rowCount: 1000,
-                  columnCount: 10,
+      const spreadsheetData = await this.makeApiRequest(
+        this.baseUrl,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            properties: {
+              title: spreadsheetTitle,
+              locale: "ja_JP",
+              timeZone: "Asia/Tokyo",
+            },
+            sheets: [
+              {
+                properties: {
+                  title: currentMonth,
+                  gridProperties: {
+                    rowCount: 1000,
+                    columnCount: 10,
+                  },
                 },
               },
-            },
-          ],
-        }),
-      });
-
-      const spreadsheetData = await this.handleApiResponse(
-        response,
-        "スプレッドシート作成"
+            ],
+          }),
+        },
+        "スプレッドシート作成",
+        guildId
       );
       const spreadsheetId = spreadsheetData.spreadsheetId;
       const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
@@ -459,7 +473,7 @@ export class SheetsService {
         spreadsheetData.sheets?.[0]?.properties?.sheetId || 0;
 
       // 統一されたヘッダー行を追加
-      await this.setupKintaiHeaders(spreadsheetId, currentMonth, firstSheetId);
+      await this.setupKintaiHeaders(spreadsheetId, currentMonth, guildId, firstSheetId);
 
       return {
         success: true,
@@ -491,7 +505,8 @@ export class SheetsService {
     username: string,
     projectName: string,
     channelId: string,
-    startTime: Date
+    startTime: Date,
+    guildId?: string
   ): Promise<{ success: boolean; recordId?: string; error?: string }> {
     try {
       // アクセストークンを更新
@@ -501,14 +516,14 @@ export class SheetsService {
       const sheetName = currentMonth;
 
       // シートが存在するかチェック
-      const sheetsData = await this.getSpreadsheetInfo(spreadsheetId);
+      const sheetsData = await this.getSpreadsheetInfo(spreadsheetId, guildId);
       const sheetExists = sheetsData.sheets?.some(
         (sheet: any) => sheet.properties.title === sheetName
       );
 
       // シートが存在しない場合は作成
       if (!sheetExists) {
-        await this.createMonthlySheet(spreadsheetId, sheetName);
+        await this.createMonthlySheet(spreadsheetId, sheetName, guildId);
       }
 
       // 日時フォーマット（完全な日時形式）
@@ -531,10 +546,10 @@ export class SheetsService {
         ],
       ];
 
-      await this.appendRow(spreadsheetId, `${sheetName}!A:H`, values);
+      await this.appendRow(spreadsheetId, `${sheetName}!A:H`, values, guildId);
 
       // 追加された行の番号を特定して数式を設定
-      const allValues = await this.getRange(spreadsheetId, `${sheetName}!A:H`);
+      const allValues = await this.getRange(spreadsheetId, `${sheetName}!A:H`, guildId);
       let targetRowIndex = -1;
 
       for (let i = 1; i < allValues.length; i++) {
@@ -586,7 +601,8 @@ export class SheetsService {
     spreadsheetId: string,
     userId: string,
     endTime: Date,
-    recordId: string
+    recordId: string,
+    guildId?: string
   ): Promise<{ success: boolean; workHours?: string; error?: string }> {
     try {
       // アクセストークンを更新
@@ -597,7 +613,7 @@ export class SheetsService {
 
       // 該当する開始記録を検索
       const range = `${sheetName}!A:H`;
-      const values = await this.getRange(spreadsheetId, range);
+      const values = await this.getRange(spreadsheetId, range, guildId);
 
       let targetRowIndex = -1;
       let startTimeStr = "";
@@ -630,13 +646,15 @@ export class SheetsService {
       await this.updateRange(
         spreadsheetId,
         `${sheetName}!E${targetRowIndex}`, // 終了時刻のみ
-        [[endTimeStr]]
+        [[endTimeStr]],
+        guildId
       );
 
       // 差分値を取得（数式で計算された結果）
       const workHoursResult = await this.getRange(
         spreadsheetId,
-        `${sheetName}!C${targetRowIndex}`
+        `${sheetName}!C${targetRowIndex}`,
+        guildId
       );
       const workHours = workHoursResult[0]?.[0] || "計算中";
 
@@ -657,6 +675,35 @@ export class SheetsService {
         success: false,
         error: `勤務終了時刻の記録に失敗しました: ${errorMessage}`,
       };
+    }
+  }
+
+  /**
+   * リトライ機能付きのAPIリクエスト
+   */
+  private async makeApiRequest(
+    url: string,
+    options: RequestInit,
+    operation: string,
+    guildId?: string,
+    retryCount = 0
+  ): Promise<any> {
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          ...options.headers,
+          ...this.getHeaders(),
+        },
+      });
+
+      return await this.handleApiResponse(response, operation, guildId);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'RETRY_WITH_NEW_TOKEN' && retryCount < 1) {
+        console.log('新しいトークンでリトライします');
+        return this.makeApiRequest(url, options, operation, guildId, retryCount + 1);
+      }
+      throw error;
     }
   }
 
@@ -759,17 +806,14 @@ export class SheetsService {
    */
   async createMonthlySheet(
     spreadsheetId: string,
-    sheetName: string
+    sheetName: string,
+    guildId?: string
   ): Promise<void> {
     // シートを追加
-    const addSheetResponse = await fetch(
+    await this.makeApiRequest(
       `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
       {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.accessToken}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           requests: [
             {
@@ -785,30 +829,30 @@ export class SheetsService {
             },
           ],
         }),
-      }
+      },
+      "月次シート作成",
+      guildId
     );
 
-    if (!addSheetResponse.ok) {
-      const errorData = await addSheetResponse.text();
-      throw new Error(
-        `Failed to add sheet: ${addSheetResponse.status} ${errorData}`
-      );
-    }
-
     // 統一されたヘッダー行を追加
-    await this.appendRow(spreadsheetId, `${sheetName}!A1:H1`, [KINTAI_HEADERS]);
+    await this.appendRow(spreadsheetId, `${sheetName}!A1:H1`, [KINTAI_HEADERS], guildId);
   }
 
   /**
    * スプレッドシート情報を取得
    */
-  private async getSpreadsheetInfo(spreadsheetId: string): Promise<any> {
-    const response = await fetch(`${this.baseUrl}/${spreadsheetId}`, {
-      method: "GET",
-      headers: this.getHeaders(),
-    });
-
-    return this.handleApiResponse(response, "スプレッドシート情報取得");
+  private async getSpreadsheetInfo(
+    spreadsheetId: string,
+    guildId?: string
+  ): Promise<any> {
+    return this.makeApiRequest(
+      `${this.baseUrl}/${spreadsheetId}`,
+      {
+        method: "GET",
+      },
+      "スプレッドシート情報取得",
+      guildId
+    );
   }
 
   /**
@@ -819,7 +863,8 @@ export class SheetsService {
     accessToken: string,
     spreadsheetId: string,
     userId: string,
-    channelId: string
+    channelId: string,
+    guildId?: string
   ): Promise<{
     hasActiveSession: boolean;
     startTime?: string;
@@ -833,7 +878,7 @@ export class SheetsService {
       const sheetName = currentMonth;
 
       // シートが存在するかチェック
-      const sheetsData = await this.getSpreadsheetInfo(spreadsheetId);
+      const sheetsData = await this.getSpreadsheetInfo(spreadsheetId, guildId);
       const sheetExists = sheetsData.sheets?.some(
         (sheet: any) => sheet.properties.title === sheetName
       );
@@ -845,7 +890,7 @@ export class SheetsService {
 
       // 該当ユーザーの未完了記録を検索
       const range = `${sheetName}!A:H`;
-      const values = await this.getRange(spreadsheetId, range);
+      const values = await this.getRange(spreadsheetId, range, guildId);
 
       for (let i = 1; i < values.length; i++) {
         // ヘッダー行をスキップ
@@ -904,7 +949,8 @@ export class SheetsService {
     accessToken: string,
     spreadsheetId: string,
     userId: string,
-    channelId: string
+    channelId: string,
+    guildId?: string
   ): Promise<{
     found: boolean;
     recordId?: string;
@@ -920,7 +966,7 @@ export class SheetsService {
       const sheetName = currentMonth;
 
       // シートが存在するかチェック
-      const sheetsData = await this.getSpreadsheetInfo(spreadsheetId);
+      const sheetsData = await this.getSpreadsheetInfo(spreadsheetId, guildId);
       const sheetExists = sheetsData.sheets?.some(
         (sheet: any) => sheet.properties.title === sheetName
       );
@@ -931,7 +977,7 @@ export class SheetsService {
 
       // 該当ユーザーの未完了記録を検索
       const range = `${sheetName}!A:H`;
-      const values = await this.getRange(spreadsheetId, range);
+      const values = await this.getRange(spreadsheetId, range, guildId);
 
       for (let i = 1; i < values.length; i++) {
         // ヘッダー行をスキップ
