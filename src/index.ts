@@ -308,6 +308,10 @@ async function handleStartCommandWithRetry(
     interaction.user?.username ||
     "Unknown";
 
+  // チャンネル名とAPIエラー情報（エラー時の詳細表示用）
+  let channelName: string | null = null;
+  let apiError: string | null = null;
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`Start command attempt ${attempt}/${maxRetries}`);
@@ -372,10 +376,6 @@ async function handleStartCommandWithRetry(
           c.env.DISCORD_TOKEN ? "あり" : "なし"
         }`
       );
-
-      let channelName: string | null = null;
-      let apiError: string | null = null;
-      let apiErrorCode: number | null = null;
 
       try {
         // Discord APIサービス内でのエラーキャッチのため、getChannelを直接呼び出し
@@ -516,36 +516,14 @@ async function handleStartCommandWithRetry(
       );
 
       if (startResult.success) {
-        // Discord API情報を含む詳細レスポンス
-        const isApiSuccess = channelName && !channelName.startsWith("channel-");
-        let apiStatusInfo: string;
-
-        if (isApiSuccess) {
-          apiStatusInfo = `🔗 **Discord API**: ✅ 正常動作 (チャンネル名: "${channelName}")`;
-        } else if (apiError) {
-          // 403エラーの場合は権限不足を明示
-          if (apiError.includes("アクセス権限不足")) {
-            apiStatusInfo = `🔗 **Discord API**: ❌ 権限不足\n⚠️ **解決方法**: Botをサーバーに招待し、チャンネル閲覧権限を付与してください`;
-          } else if (apiError.includes("Bot認証エラー")) {
-            apiStatusInfo = `🔗 **Discord API**: ❌ 認証エラー\n⚠️ **解決方法**: Bot Tokenを確認してください`;
-          } else {
-            apiStatusInfo = `🔗 **Discord API**: ❌ エラー (${apiError})`;
-          }
-        } else {
-          apiStatusInfo = `🔗 **Discord API**: ⚠️ フォールバック動作 (表示名: "${displayChannelName}")`;
-        }
-
-        const debugInfo = `\n🔍 **詳細**: チャンネルID: \`${channelId}\``;
-
+        // 成功時はシンプルなメッセージ（プロジェクト名と開始時刻のみ）
         await discordApiService.editDeferredResponse(
           c.env.DISCORD_APPLICATION_ID,
           token,
           `✅ 勤務を開始しました！${timeMessage}\n\n📍 **プロジェクト**: ${displayChannelName}\n⏰ **開始時刻**: ${startTime.toLocaleString(
             "ja-JP",
             { timeZone: "Asia/Tokyo" }
-          )}\n${apiStatusInfo}${debugInfo}\n📊 [スプレッドシートで確認](${
-            serverConfig.sheet_url
-          })`
+          )}`
         );
         return;
       } else {
@@ -564,16 +542,32 @@ async function handleStartCommandWithRetry(
             ? JSON.stringify(error, null, 2)
             : String(error);
 
-        // エラーの場合：元のレスポンスを削除し、EPHEMERALフォローアップメッセージを送信
+        // エラーの場合：詳細情報を含むEPHEMERALメッセージを送信
         await discordApiService.deleteOriginalResponse(
           c.env.DISCORD_APPLICATION_ID,
           token
         );
 
+        // Discord API状況の詳細情報をエラー時のみ表示
+        const isApiSuccess = channelName && !channelName.startsWith("channel-");
+        let apiStatusInfo = "";
+
+        if (!isApiSuccess && apiError) {
+          if (apiError.includes("アクセス権限不足")) {
+            apiStatusInfo = `\n\n🔗 **Discord API**: ❌ 権限不足\n⚠️ **解決方法**: Botをサーバーに招待し、チャンネル閲覧権限を付与してください`;
+          } else if (apiError.includes("Bot認証エラー")) {
+            apiStatusInfo = `\n\n🔗 **Discord API**: ❌ 認証エラー\n⚠️ **解決方法**: Bot Tokenを確認してください`;
+          } else {
+            apiStatusInfo = `\n\n🔗 **Discord API**: ❌ エラー (${apiError})`;
+          }
+        }
+
+        const debugInfo = `\n🔍 **詳細**: チャンネルID: \`${channelId}\``;
+
         await discordApiService.createFollowupMessage(
           c.env.DISCORD_APPLICATION_ID,
           token,
-          `❌ 勤務開始の処理に失敗しました\n\n**エラー詳細**: ${errorMessage}\n\nネットワークの状況を確認して、再度お試しください。\n問題が続く場合は管理者にお問い合わせください。`,
+          `❌ 勤務開始の処理に失敗しました\n\n**エラー詳細**: ${errorMessage}${apiStatusInfo}${debugInfo}\n\nネットワークの状況を確認して、再度お試しください。\n問題が続く場合は管理者にお問い合わせください。`,
           true // ephemeral
         );
       } else {
@@ -601,6 +595,9 @@ async function handleEndCommandWithRetry(
     interaction.member?.user?.username ||
     interaction.user?.username ||
     "Unknown";
+
+  // エラー時の詳細表示用
+  let activeWorkRecord: any = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -678,7 +675,7 @@ async function handleEndCommandWithRetry(
 
       // スプレッドシートで勤務記録をチェック（KVの代わり）
       const sheetsService = new SheetsService(c.env);
-      const activeWorkRecord = await sheetsService.getActiveWorkRecord(
+      activeWorkRecord = await sheetsService.getActiveWorkRecord(
         serverConfig.access_token,
         serverConfig.spreadsheet_id,
         userId,
@@ -777,14 +774,13 @@ async function handleEndCommandWithRetry(
           workDuration = endResult.workHours || `${hours}時間${minutes}分`;
         }
 
+        // 成功時はシンプルなメッセージ（プロジェクト名と労働時間のみ）
         await discordApiService.editDeferredResponse(
           c.env.DISCORD_APPLICATION_ID,
           token,
           `✅ 勤務を終了しました！お疲れ様でした！${timeMessage}\n\n📍 **プロジェクト**: ${
             activeWorkRecord.projectName || "不明"
-          }\n⏰ **労働時間**: ${workDuration}\n🔍 **記録ID**: \`${
-            activeWorkRecord.recordId || "不明"
-          }\`\n📊 [スプレッドシートで確認](${serverConfig.sheet_url})`
+          }\n⏰ **労働時間**: ${workDuration}`
         );
         return;
       } else {
@@ -803,16 +799,21 @@ async function handleEndCommandWithRetry(
             ? JSON.stringify(error, null, 2)
             : String(error);
 
-        // エラーの場合：元のレスポンスを削除し、EPHEMERALフォローアップメッセージを送信
+        // エラーの場合：詳細情報を含むEPHEMERALメッセージを送信
         await discordApiService.deleteOriginalResponse(
           c.env.DISCORD_APPLICATION_ID,
           token
         );
 
+        const debugInfo = `\n🔍 **詳細**: チャンネルID: \`${channelId}\``;
+        const recordInfo = activeWorkRecord?.recordId 
+          ? `\n📝 **記録ID**: \`${activeWorkRecord.recordId}\``
+          : "";
+
         await discordApiService.createFollowupMessage(
           c.env.DISCORD_APPLICATION_ID,
           token,
-          `❌ 勤務終了の処理に失敗しました\n\n**エラー詳細**: ${errorMessage}\n\nネットワークの状況を確認して、再度お試しください。\n問題が続く場合は管理者にお問い合わせください。`,
+          `❌ 勤務終了の処理に失敗しました\n\n**エラー詳細**: ${errorMessage}${recordInfo}${debugInfo}\n\nネットワークの状況を確認して、再度お試しください。\n問題が続く場合は管理者にお問い合わせください。`,
           true // ephemeral
         );
       } else {
