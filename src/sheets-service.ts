@@ -16,12 +16,12 @@ const KINTAI_COLUMNS = {
 // 統一されたヘッダー定義（新しいテーブル構造に対応）
 const KINTAI_HEADERS = [
   "プロジェクト名",
-  "ユーザー名", 
+  "ユーザー名",
   "差分",
   "開始時刻",
   "終了時刻",
   "channel_id",
-  "discord_id", 
+  "discord_id",
   "uuid",
 ];
 
@@ -91,7 +91,7 @@ export class SheetsService {
       headers: this.getHeaders(),
       body: JSON.stringify({
         properties: {
-          title: title || `勤怠管理_${currentMonth}`,
+          title: title || `勤怠ログ管理_kintai-discord`,
           locale: "ja_JP",
           timeZone: "Asia/Tokyo",
         },
@@ -177,14 +177,117 @@ export class SheetsService {
             "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)",
         },
       },
+      // 各列の幅を設定
       {
-        autoResizeDimensions: {
-          dimensions: {
+        updateDimensionProperties: {
+          range: {
             sheetId: sheetId,
             dimension: "COLUMNS",
-            startIndex: 0,
-            endIndex: KINTAI_HEADERS.length,
+            startIndex: 0, // A列: プロジェクト名
+            endIndex: 1,
           },
+          properties: {
+            pixelSize: 150,
+          },
+          fields: "pixelSize",
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: {
+            sheetId: sheetId,
+            dimension: "COLUMNS",
+            startIndex: 1, // B列: ユーザー名
+            endIndex: 2,
+          },
+          properties: {
+            pixelSize: 120,
+          },
+          fields: "pixelSize",
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: {
+            sheetId: sheetId,
+            dimension: "COLUMNS",
+            startIndex: 2, // C列: 差分
+            endIndex: 3,
+          },
+          properties: {
+            pixelSize: 120,
+          },
+          fields: "pixelSize",
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: {
+            sheetId: sheetId,
+            dimension: "COLUMNS",
+            startIndex: 3, // D列: 開始時刻
+            endIndex: 4,
+          },
+          properties: {
+            pixelSize: 180,
+          },
+          fields: "pixelSize",
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: {
+            sheetId: sheetId,
+            dimension: "COLUMNS",
+            startIndex: 4, // E列: 終了時刻
+            endIndex: 5,
+          },
+          properties: {
+            pixelSize: 180,
+          },
+          fields: "pixelSize",
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: {
+            sheetId: sheetId,
+            dimension: "COLUMNS",
+            startIndex: 5, // F列: channel_id
+            endIndex: 6,
+          },
+          properties: {
+            pixelSize: 150,
+          },
+          fields: "pixelSize",
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: {
+            sheetId: sheetId,
+            dimension: "COLUMNS",
+            startIndex: 6, // G列: discord_id
+            endIndex: 7,
+          },
+          properties: {
+            pixelSize: 150,
+          },
+          fields: "pixelSize",
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: {
+            sheetId: sheetId,
+            dimension: "COLUMNS",
+            startIndex: 7, // H列: uuid
+            endIndex: 8,
+          },
+          properties: {
+            pixelSize: 250,
+          },
+          fields: "pixelSize",
         },
       },
     ];
@@ -318,9 +421,7 @@ export class SheetsService {
   }> {
     try {
       const currentMonth = new Date().toISOString().slice(0, 7);
-      const spreadsheetTitle = `勤怠管理_${guildId}_${new Date().toLocaleDateString(
-        "ja-JP"
-      )}`;
+      const spreadsheetTitle = `勤怠ログ管理_kintai-discord`;
 
       // スプレッドシートを作成
       const response = await fetch(this.baseUrl, {
@@ -421,7 +522,7 @@ export class SheetsService {
         [
           projectName, // A: プロジェクト名（チャンネル名）
           username, // B: ユーザー名
-          "", // C: 差分（終了時に計算される）
+          "", // C: 差分（後で数式を設定）
           startTimeStr, // D: 開始時刻
           "", // E: 終了時刻（空のまま）
           channelId, // F: channel_id
@@ -431,6 +532,31 @@ export class SheetsService {
       ];
 
       await this.appendRow(spreadsheetId, `${sheetName}!A:H`, values);
+
+      // 追加された行の番号を特定して数式を設定
+      const allValues = await this.getRange(spreadsheetId, `${sheetName}!A:H`);
+      let targetRowIndex = -1;
+
+      for (let i = 1; i < allValues.length; i++) {
+        const row = allValues[i];
+        if (row[KINTAI_COLUMNS.UUID] === recordId) {
+          targetRowIndex = i + 1; // Google Sheetsは1ベース
+          break;
+        }
+      }
+
+      if (targetRowIndex > 0) {
+        // 差分の数式を設定
+        await this.updateRange(
+          spreadsheetId,
+          `${sheetName}!C${targetRowIndex}`,
+          [
+            [
+              `=IF(E${targetRowIndex}="","",HOUR(E${targetRowIndex}-D${targetRowIndex})&"時間"&MINUTE(E${targetRowIndex}-D${targetRowIndex})&"分"&SECOND(E${targetRowIndex}-D${targetRowIndex})&"秒")`,
+            ],
+          ]
+        );
+      }
 
       return {
         success: true,
@@ -475,11 +601,14 @@ export class SheetsService {
 
       let targetRowIndex = -1;
       let startTimeStr = "";
-      
+
       for (let i = 1; i < values.length; i++) {
         // ヘッダー行をスキップ
         const row = values[i];
-        if (row[KINTAI_COLUMNS.UUID] === recordId && row[KINTAI_COLUMNS.END_TIME] === "") {
+        if (
+          row[KINTAI_COLUMNS.UUID] === recordId &&
+          row[KINTAI_COLUMNS.END_TIME] === ""
+        ) {
           // UUIDが一致し、終了時刻が空
           targetRowIndex = i + 1; // Google Sheetsは1ベース
           startTimeStr = row[KINTAI_COLUMNS.START_TIME];
@@ -497,15 +626,19 @@ export class SheetsService {
       // 終了時刻フォーマット
       const endTimeStr = this.formatDateTimeToJST(endTime);
 
-      // 勤務時間を計算（新しい形式で）
-      const workHours = this.calculateWorkHoursFromDateTime(startTimeStr, endTimeStr);
-
-      // 終了時刻と勤務時間を更新（新しいカラム位置に対応）
+      // 終了時刻のみを更新（差分は数式で自動計算される）
       await this.updateRange(
         spreadsheetId,
-        `${sheetName}!C${targetRowIndex}:E${targetRowIndex}`, // 差分、開始時刻、終了時刻
-        [[workHours, startTimeStr, endTimeStr]]
+        `${sheetName}!E${targetRowIndex}`, // 終了時刻のみ
+        [[endTimeStr]]
       );
+
+      // 差分値を取得（数式で計算された結果）
+      const workHoursResult = await this.getRange(
+        spreadsheetId,
+        `${sheetName}!C${targetRowIndex}`
+      );
+      const workHours = workHoursResult[0]?.[0] || "計算中";
 
       return {
         success: true,
@@ -547,7 +680,7 @@ export class SheetsService {
     return date.toLocaleString("ja-JP", {
       timeZone: "Asia/Tokyo",
       year: "numeric",
-      month: "2-digit", 
+      month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
@@ -559,13 +692,26 @@ export class SheetsService {
   /**
    * 勤務時間を計算（日時文字列から）
    */
-  private calculateWorkHoursFromDateTime(startTimeStr: string, endTimeStr: string): string {
+  private calculateWorkHoursFromDateTime(
+    startTimeStr: string,
+    endTimeStr: string
+  ): string {
     try {
-      const startTime = new Date(startTimeStr.replace(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})/, '$1-$2-$3T$4:$5:$6+09:00'));
-      const endTime = new Date(endTimeStr.replace(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})/, '$1-$2-$3T$4:$5:$6+09:00'));
+      const startTime = new Date(
+        startTimeStr.replace(
+          /(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})/,
+          "$1-$2-$3T$4:$5:$6+09:00"
+        )
+      );
+      const endTime = new Date(
+        endTimeStr.replace(
+          /(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})/,
+          "$1-$2-$3T$4:$5:$6+09:00"
+        )
+      );
 
       const diffMs = endTime.getTime() - startTime.getTime();
-      
+
       if (diffMs < 0) {
         return "エラー";
       }
@@ -704,7 +850,7 @@ export class SheetsService {
       for (let i = 1; i < values.length; i++) {
         // ヘッダー行をスキップ
         const row = values[i];
-        
+
         // discord_id、channel_idが一致し、終了時刻が空の記録を検索
         if (
           row[KINTAI_COLUMNS.DISCORD_ID] === userId &&
@@ -790,7 +936,7 @@ export class SheetsService {
       for (let i = 1; i < values.length; i++) {
         // ヘッダー行をスキップ
         const row = values[i];
-        
+
         // discord_id、channel_idが一致し、終了時刻が空の記録を検索
         if (
           row[KINTAI_COLUMNS.DISCORD_ID] === userId &&

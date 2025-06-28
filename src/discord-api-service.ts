@@ -10,28 +10,37 @@ export class DiscordApiService {
   }
 
   async getChannel(channelId: string): Promise<APIChannel | null> {
-    const response = await fetch(`${this.baseUrl}/channels/${channelId}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bot ${this.botToken}`,
-        "Content-Type": "application/json",
-        "User-Agent": "Discord勤怠管理ボット (https://github.com/your-repo, 1.0.0)",
-      },
-    });
+    try {
+      const response = await fetch(`${this.baseUrl}/channels/${channelId}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bot ${this.botToken}`,
+          "Content-Type": "application/json",
+        },
+      });
 
-    if (!response.ok) return null;
-    return (await response.json()) as APIChannel;
+      if (!response.ok) {
+        throw new Error(`Discord API error: ${response.status}`);
+      }
+
+      const channelData = (await response.json()) as APIChannel;
+      return channelData;
+    } catch (error) {
+      throw error;
+    }
   }
 
   async getChannelName(channelId: string): Promise<string> {
-    const channel = await this.getChannel(channelId);
-    return channel?.name || `channel-${channelId.slice(-6)}`;
+    try {
+      const channel = await this.getChannel(channelId);
+      return channel?.name || `channel-${channelId.slice(-6)}`;
+    } catch (error) {
+      return `channel-${channelId.slice(-6)}`;
+    }
   }
 
   /**
    * チャンネルタイプを判定
-   * @param channelType Discord チャンネルタイプ
-   * @returns チャンネルタイプの説明
    */
   getChannelTypeDescription(channelType: ChannelType): string {
     const channelTypes: { [key in ChannelType]: string } = {
@@ -52,7 +61,12 @@ export class DiscordApiService {
     return channelTypes[channelType] || "不明なチャンネル";
   }
 
-  async editDeferredResponse(applicationId: string, token: string, content: string, ephemeral: boolean = false): Promise<void> {
+  async editDeferredResponse(
+    applicationId: string,
+    token: string,
+    content: string,
+    ephemeral: boolean = false
+  ): Promise<void> {
     const editUrl = `${this.baseUrl}/webhooks/${applicationId}/${token}/messages/@original`;
     const payload: any = { content };
     if (ephemeral) payload.flags = MessageFlags.Ephemeral;
@@ -64,11 +78,18 @@ export class DiscordApiService {
     });
 
     if (!response.ok) {
-      throw new Error(`Discord API error: ${response.status} - ${await response.text()}`);
+      throw new Error(
+        `Discord API error: ${response.status} - ${await response.text()}`
+      );
     }
   }
 
-  async createFollowupMessage(applicationId: string, token: string, content: string, ephemeral: boolean = false): Promise<void> {
+  async createFollowupMessage(
+    applicationId: string,
+    token: string,
+    content: string,
+    ephemeral: boolean = false
+  ): Promise<void> {
     const followupUrl = `${this.baseUrl}/webhooks/${applicationId}/${token}`;
     const payload: any = { content };
     if (ephemeral) payload.flags = MessageFlags.Ephemeral;
@@ -80,16 +101,23 @@ export class DiscordApiService {
     });
 
     if (!response.ok) {
-      throw new Error(`Discord API error: ${response.status} - ${await response.text()}`);
+      throw new Error(
+        `Discord API error: ${response.status} - ${await response.text()}`
+      );
     }
   }
 
-  async deleteOriginalResponse(applicationId: string, token: string): Promise<void> {
+  async deleteOriginalResponse(
+    applicationId: string,
+    token: string
+  ): Promise<void> {
     const deleteUrl = `${this.baseUrl}/webhooks/${applicationId}/${token}/messages/@original`;
     const response = await fetch(deleteUrl, { method: "DELETE" });
 
     if (!response.ok) {
-      throw new Error(`Discord API error: ${response.status} - ${await response.text()}`);
+      throw new Error(
+        `Discord API error: ${response.status} - ${await response.text()}`
+      );
     }
   }
 }

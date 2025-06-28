@@ -363,10 +363,51 @@ async function handleStartCommandWithRetry(
         startTime = new Date();
       }
 
-      // チャンネル名取得
-      const channelName = await discordApiService.getChannelName(channelId);
+      // チャンネル名取得（詳細情報付き）
+      console.log(
+        `Discord API: チャンネル名取得開始 - チャンネルID: ${channelId}`
+      );
+      console.log(
+        `Discord API: Bot Token存在確認: ${
+          c.env.DISCORD_TOKEN ? "あり" : "なし"
+        }`
+      );
+
+      let channelName: string | null = null;
+      let apiError: string | null = null;
+      let apiErrorCode: number | null = null;
+
+      try {
+        // Discord APIサービス内でのエラーキャッチのため、getChannelを直接呼び出し
+        const channel = await discordApiService.getChannel(channelId);
+        if (channel?.name) {
+          channelName = channel.name;
+          console.log(
+            `Discord API: チャンネル名取得結果 - 成功: "${channelName}"`
+          );
+        } else {
+          channelName = `channel-${channelId.slice(-6)}`;
+          console.log(
+            `Discord API: チャンネル名取得結果 - 失敗: フォールバック使用`
+          );
+        }
+      } catch (error) {
+        apiError = error instanceof Error ? error.message : String(error);
+        console.error(`Discord API: チャンネル名取得エラー - ${apiError}`);
+        channelName = `channel-${channelId.slice(-6)}`;
+      }
+
       const displayChannelName =
         channelName || `チャンネル_${channelId.slice(-4)}`;
+
+      // API取得状況の詳細
+      const isApiSuccess = channelName && !channelName.startsWith("channel-");
+      console.log(
+        `Discord API状況: ${isApiSuccess ? "正常" : "フォールバック使用"}`
+      );
+      if (!isApiSuccess && apiError) {
+        console.log(`Discord API エラー詳細: ${apiError}`);
+      }
 
       // サーバー設定確認
       const serverConfigService = new ServerConfigService(c.env);
@@ -475,13 +516,36 @@ async function handleStartCommandWithRetry(
       );
 
       if (startResult.success) {
+        // Discord API情報を含む詳細レスポンス
+        const isApiSuccess = channelName && !channelName.startsWith("channel-");
+        let apiStatusInfo: string;
+
+        if (isApiSuccess) {
+          apiStatusInfo = `🔗 **Discord API**: ✅ 正常動作 (チャンネル名: "${channelName}")`;
+        } else if (apiError) {
+          // 403エラーの場合は権限不足を明示
+          if (apiError.includes("アクセス権限不足")) {
+            apiStatusInfo = `🔗 **Discord API**: ❌ 権限不足\n⚠️ **解決方法**: Botをサーバーに招待し、チャンネル閲覧権限を付与してください`;
+          } else if (apiError.includes("Bot認証エラー")) {
+            apiStatusInfo = `🔗 **Discord API**: ❌ 認証エラー\n⚠️ **解決方法**: Bot Tokenを確認してください`;
+          } else {
+            apiStatusInfo = `🔗 **Discord API**: ❌ エラー (${apiError})`;
+          }
+        } else {
+          apiStatusInfo = `🔗 **Discord API**: ⚠️ フォールバック動作 (表示名: "${displayChannelName}")`;
+        }
+
+        const debugInfo = `\n🔍 **詳細**: チャンネルID: \`${channelId}\``;
+
         await discordApiService.editDeferredResponse(
           c.env.DISCORD_APPLICATION_ID,
           token,
           `✅ 勤務を開始しました！${timeMessage}\n\n📍 **プロジェクト**: ${displayChannelName}\n⏰ **開始時刻**: ${startTime.toLocaleString(
             "ja-JP",
             { timeZone: "Asia/Tokyo" }
-          )}\n📊 [スプレッドシートで確認](${serverConfig.sheet_url})`
+          )}\n${apiStatusInfo}${debugInfo}\n📊 [スプレッドシートで確認](${
+            serverConfig.sheet_url
+          })`
         );
         return;
       } else {
@@ -702,19 +766,25 @@ async function handleEndCommandWithRetry(
       if (endResult.success) {
         // 労働時間計算
         let workDuration = endResult.workHours || "計算中...";
-        
+
         if (activeWorkRecord.startTime) {
           const startTime = new Date(activeWorkRecord.startTime);
           const duration = endTime.getTime() - startTime.getTime();
           const hours = Math.floor(duration / (1000 * 60 * 60));
-          const minutes = Math.floor((duration % (1000 * 60 * 60)) / (1000 * 60));
+          const minutes = Math.floor(
+            (duration % (1000 * 60 * 60)) / (1000 * 60)
+          );
           workDuration = endResult.workHours || `${hours}時間${minutes}分`;
         }
 
         await discordApiService.editDeferredResponse(
           c.env.DISCORD_APPLICATION_ID,
           token,
-          `✅ 勤務を終了しました！お疲れ様でした！${timeMessage}\n\n📍 **プロジェクト**: ${activeWorkRecord.projectName || "不明"}\n⏰ **労働時間**: ${workDuration}\n📊 [スプレッドシートで確認](${serverConfig.sheet_url})`
+          `✅ 勤務を終了しました！お疲れ様でした！${timeMessage}\n\n📍 **プロジェクト**: ${
+            activeWorkRecord.projectName || "不明"
+          }\n⏰ **労働時間**: ${workDuration}\n🔍 **記録ID**: \`${
+            activeWorkRecord.recordId || "不明"
+          }\`\n📊 [スプレッドシートで確認](${serverConfig.sheet_url})`
         );
         return;
       } else {
