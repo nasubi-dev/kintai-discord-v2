@@ -163,3 +163,47 @@ export function formatDateToJST(date: Date): string {
 
   return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
 }
+
+/**
+ * 日本語ロケール形式の日時文字列をDateオブジェクトに変換
+ * Google Sheetsから取得した日時文字列（例：2025/06/28 14:30:00）を適切にパース
+ * @param jstDateTimeString JST形式の日時文字列
+ * @returns Dateオブジェクト（UTC）、パースに失敗した場合はnull
+ */
+export function parseDateTimeFromJST(jstDateTimeString: string): Date | null {
+  try {
+    // 日本語ロケール形式の例: "2025/06/28 14:30:00"
+    const match = jstDateTimeString.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})$/);
+    
+    if (!match) {
+      // フォールバック：標準的なDate.parseを試行
+      const parsed = new Date(jstDateTimeString);
+      if (!isNaN(parsed.getTime())) {
+        // JSTとして解釈されているか確認し、UTCに調整
+        // 既にUTCとして正しく解釈されている場合はそのまま返す
+        return parsed;
+      }
+      return null;
+    }
+
+    const [, year, month, day, hours, minutes, seconds] = match;
+    
+    // JST時刻として解釈してUTCに変換
+    const jstDate = new Date(
+      parseInt(year),
+      parseInt(month) - 1, // 月は0ベース
+      parseInt(day),
+      parseInt(hours),
+      parseInt(minutes),
+      parseInt(seconds)
+    );
+
+    // JSTからUTCに変換（-9時間）
+    const utcDate = new Date(jstDate.getTime() - 9 * 60 * 60 * 1000);
+    
+    return utcDate;
+  } catch (error) {
+    console.error("JST DateTime parsing error:", error);
+    return null;
+  }
+}

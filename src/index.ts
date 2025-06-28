@@ -14,6 +14,7 @@ import {
   parseTimeStringToJST,
   isFutureTime,
   formatDateToJST,
+  parseDateTimeFromJST,
 } from "./utils";
 import { DiscordApiService } from "./discord-api-service";
 import { OAuthService } from "./oauth-service";
@@ -306,7 +307,6 @@ async function handleStartCommandWithRetry(
     interaction.member?.user?.username ||
     interaction.user?.username ||
     "Unknown";
-  const kvKey = `${userId}:${channelId}`;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -361,36 +361,6 @@ async function handleStartCommandWithRetry(
         timeMessage = ` (開始時刻: ${formatDateToJST(startTime)})`;
       } else {
         startTime = new Date();
-      }
-
-      // KVで重複チェック（高速）
-      const existingRecord = await c.env.KINTAI_DISCORD_KV.get(kvKey);
-
-      if (existingRecord) {
-        // 古いレコード（24時間以上前）をチェックして削除
-        const recordData = JSON.parse(existingRecord);
-        const recordTime = new Date(recordData.startTime);
-        const now = new Date();
-        const timeDiff = now.getTime() - recordTime.getTime();
-        const hoursDiff = timeDiff / (1000 * 60 * 60);
-
-        if (hoursDiff > 24) {
-          await c.env.KINTAI_DISCORD_KV.delete(kvKey);
-        } else {
-          // まだ有効なレコードの場合
-          await discordApiService.deleteOriginalResponse(
-            c.env.DISCORD_APPLICATION_ID,
-            token
-          );
-
-          await discordApiService.createFollowupMessage(
-            c.env.DISCORD_APPLICATION_ID,
-            token,
-            "❌ 既に勤務を開始しています\n\n先に `/end` コマンドで終了してください。",
-            true // ephemeral
-          );
-          return;
-        }
       }
 
       // チャンネル名取得
@@ -454,8 +424,46 @@ async function handleStartCommandWithRetry(
         return;
       }
 
-      // Sheets API で勤務開始記録
+      // スプレッドシートで重複チェック（KVの代わり）
       const sheetsService = new SheetsService(c.env);
+      const activeSessionCheck = await sheetsService.checkActiveWorkSession(
+        serverConfig.access_token,
+        serverConfig.spreadsheet_id,
+        userId,
+        channelId
+      );
+
+      if (activeSessionCheck.error) {
+        await discordApiService.deleteOriginalResponse(
+          c.env.DISCORD_APPLICATION_ID,
+          token
+        );
+
+        await discordApiService.createFollowupMessage(
+          c.env.DISCORD_APPLICATION_ID,
+          token,
+          `❌ 勤務状態の確認に失敗しました\n\n**エラー**: ${activeSessionCheck.error}`,
+          true // ephemeral
+        );
+        return;
+      }
+
+      if (activeSessionCheck.hasActiveSession) {
+        await discordApiService.deleteOriginalResponse(
+          c.env.DISCORD_APPLICATION_ID,
+          token
+        );
+
+        await discordApiService.createFollowupMessage(
+          c.env.DISCORD_APPLICATION_ID,
+          token,
+          `❌ 既に勤務を開始しています\n\n**開始時刻**: ${activeSessionCheck.startTime}\n\n先に \`/end\` コマンドで終了してください。`,
+          true // ephemeral
+        );
+        return;
+      }
+
+      // Sheets API で勤務開始記録
       const startResult = await sheetsService.recordStartTime(
         serverConfig.access_token,
         serverConfig.spreadsheet_id,
@@ -467,21 +475,6 @@ async function handleStartCommandWithRetry(
       );
 
       if (startResult.success) {
-        // KVに状態保存
-        const kvRecord = {
-          startTime: startTime.toISOString(),
-          uuid: startResult.recordId || crypto.randomUUID(),
-          username,
-          channelName: displayChannelName,
-          projectName: displayChannelName,
-        };
-
-        await c.env.KINTAI_DISCORD_KV.put(
-          kvKey,
-          JSON.stringify(kvRecord),
-          { expirationTtl: 86400 } // 24時間
-        );
-
         await discordApiService.editDeferredResponse(
           c.env.DISCORD_APPLICATION_ID,
           token,
@@ -544,7 +537,6 @@ async function handleEndCommandWithRetry(
     interaction.member?.user?.username ||
     interaction.user?.username ||
     "Unknown";
-  const kvKey = `${userId}:${channelId}`;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -581,46 +573,6 @@ async function handleEndCommandWithRetry(
         timeMessage = ` (終了時刻: ${formatDateToJST(endTime)})`;
       } else {
         endTime = new Date();
-      }
-
-      // KVで存在チェック
-      const existingRecordStr = await c.env.KINTAI_DISCORD_KV.get(kvKey);
-      if (!existingRecordStr) {
-        // エラーの場合：元のレスポンスを削除し、EPHEMERALフォローアップメッセージを送信
-        await discordApiService.deleteOriginalResponse(
-          c.env.DISCORD_APPLICATION_ID,
-          token
-        );
-
-        await discordApiService.createFollowupMessage(
-          c.env.DISCORD_APPLICATION_ID,
-          token,
-          "❌ まだ勤務を開始していません\n\n先に `/start` コマンドで開始してください。",
-          true // ephemeral
-        );
-        return;
-      }
-
-      const existingRecord = JSON.parse(existingRecordStr);
-
-      // 終了時刻が開始時刻より前でないかチェック
-      const startTime = new Date(existingRecord.startTime);
-      if (endTime.getTime() < startTime.getTime()) {
-        await discordApiService.deleteOriginalResponse(
-          c.env.DISCORD_APPLICATION_ID,
-          token
-        );
-
-        await discordApiService.createFollowupMessage(
-          c.env.DISCORD_APPLICATION_ID,
-          token,
-          "❌ 終了時刻が開始時刻より前になっています。\n" +
-            `開始時刻: ${formatDateToJST(startTime)}\n` +
-            `終了時刻: ${formatDateToJST(endTime)}\n` +
-            "正しい終了時刻を指定してください。",
-          true // ephemeral
-        );
-        return;
       }
 
       // サーバー設定確認
@@ -660,32 +612,109 @@ async function handleEndCommandWithRetry(
         return;
       }
 
-      // Google Sheets API直接書き込み方式での勤務終了処理
+      // スプレッドシートで勤務記録をチェック（KVの代わり）
       const sheetsService = new SheetsService(c.env);
+      const activeWorkRecord = await sheetsService.getActiveWorkRecord(
+        serverConfig.access_token,
+        serverConfig.spreadsheet_id,
+        userId,
+        channelId
+      );
+
+      if (activeWorkRecord.error) {
+        await discordApiService.deleteOriginalResponse(
+          c.env.DISCORD_APPLICATION_ID,
+          token
+        );
+
+        await discordApiService.createFollowupMessage(
+          c.env.DISCORD_APPLICATION_ID,
+          token,
+          `❌ 勤務記録の確認に失敗しました\n\n**エラー**: ${activeWorkRecord.error}`,
+          true // ephemeral
+        );
+        return;
+      }
+
+      if (!activeWorkRecord.found || !activeWorkRecord.recordId) {
+        await discordApiService.deleteOriginalResponse(
+          c.env.DISCORD_APPLICATION_ID,
+          token
+        );
+
+        await discordApiService.createFollowupMessage(
+          c.env.DISCORD_APPLICATION_ID,
+          token,
+          "❌ まだ勤務を開始していません\n\n先に `/start` コマンドで開始してください。",
+          true // ephemeral
+        );
+        return;
+      }
+
+      // 終了時刻が開始時刻より前でないかチェック
+      if (activeWorkRecord.startTime) {
+        // スプレッドシートから取得した日時文字列を適切にパース
+        // formatDateTimeToJSTで保存されているため、日本時間として解釈する必要がある
+        const startTime = parseDateTimeFromJST(activeWorkRecord.startTime);
+        if (!startTime) {
+          await discordApiService.deleteOriginalResponse(
+            c.env.DISCORD_APPLICATION_ID,
+            token
+          );
+
+          await discordApiService.createFollowupMessage(
+            c.env.DISCORD_APPLICATION_ID,
+            token,
+            "❌ 開始時刻の解析に失敗しました。管理者にお問い合わせください。",
+            true // ephemeral
+          );
+          return;
+        }
+
+        if (endTime.getTime() < startTime.getTime()) {
+          await discordApiService.deleteOriginalResponse(
+            c.env.DISCORD_APPLICATION_ID,
+            token
+          );
+
+          await discordApiService.createFollowupMessage(
+            c.env.DISCORD_APPLICATION_ID,
+            token,
+            "❌ 終了時刻が開始時刻より前になっています。\n" +
+              `開始時刻: ${formatDateToJST(startTime)}\n` +
+              `終了時刻: ${formatDateToJST(endTime)}\n` +
+              "正しい終了時刻を指定してください。",
+            true // ephemeral
+          );
+          return;
+        }
+      }
+
+      // Google Sheets API直接書き込み方式での勤務終了処理
       const endResult = await sheetsService.recordEndTime(
         serverConfig.access_token,
         serverConfig.spreadsheet_id,
         userId,
         endTime,
-        existingRecord.uuid
+        activeWorkRecord.recordId
       );
 
       if (endResult.success) {
-        // KVから削除
-        await c.env.KINTAI_DISCORD_KV.delete(kvKey);
-
         // 労働時間計算
-        const startTime = new Date(existingRecord.startTime);
-        const duration = endTime.getTime() - startTime.getTime();
-        const hours = Math.floor(duration / (1000 * 60 * 60));
-        const minutes = Math.floor((duration % (1000 * 60 * 60)) / (1000 * 60));
-
-        const workDuration = endResult.workHours || `${hours}時間${minutes}分`;
+        let workDuration = endResult.workHours || "計算中...";
+        
+        if (activeWorkRecord.startTime) {
+          const startTime = new Date(activeWorkRecord.startTime);
+          const duration = endTime.getTime() - startTime.getTime();
+          const hours = Math.floor(duration / (1000 * 60 * 60));
+          const minutes = Math.floor((duration % (1000 * 60 * 60)) / (1000 * 60));
+          workDuration = endResult.workHours || `${hours}時間${minutes}分`;
+        }
 
         await discordApiService.editDeferredResponse(
           c.env.DISCORD_APPLICATION_ID,
           token,
-          `✅ 勤務を終了しました！お疲れ様でした！${timeMessage}\n\n📍 **プロジェクト**: ${existingRecord.projectName}\n⏰ **労働時間**: ${workDuration}\n📊 [スプレッドシートで確認](${serverConfig.sheet_url})`
+          `✅ 勤務を終了しました！お疲れ様でした！${timeMessage}\n\n📍 **プロジェクト**: ${activeWorkRecord.projectName || "不明"}\n⏰ **労働時間**: ${workDuration}\n📊 [スプレッドシートで確認](${serverConfig.sheet_url})`
         );
         return;
       } else {
