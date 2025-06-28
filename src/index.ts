@@ -1400,7 +1400,7 @@ app.get("/init-guide", async (c) => {
                 <li>アプリケーションの種類：「ウェブアプリケーション」</li>
                 <li>名前：「勤怠管理Bot」</li>
                 <li><strong>⚠️ 重要：</strong> 承認済みのリダイレクト URI に以下を<strong>正確に</strong>追加：<br>
-                    <code style="font-size: 14px; background: #f8f9fa; padding: 8px; display: block; margin: 5px 0; border: 2px solid #007bff;">https://kintai-discord-v2.r916nis1748.workers.dev/oauth/callback</code>
+                    <code style="font-size: 14px; background: #f8f9fa; padding: 8px; display: block; margin: 5px 0; border: 2px solid #007bff;">https://kintai-discord.nasubi.dev/oauth/callback</code>
                     <div style="background: #fff3cd; padding: 8px; margin: 5px 0; border-radius: 4px; font-size: 12px;">
                         <strong>注意:</strong> このURLを<strong>完全に一致</strong>するように入力してください。スペースや余分な文字があるとエラーになります。
                     </div>
@@ -1436,7 +1436,7 @@ app.get("/init-guide", async (c) => {
                 <ol>
                     <li>Google Cloud Console の認証情報設定を再確認</li>
                     <li>リダイレクトURIが以下と<strong>完全に一致</strong>しているか確認：<br>
-                        <code style="background: #fff; padding: 4px;">https://kintai-discord-v2.r916nis1748.workers.dev/oauth/callback</code>
+                        <code style="background: #fff; padding: 4px;">https://kintai-discord.nasubi.dev/oauth/callback</code>
                     </li>
                     <li>設定を保存後、数分待ってから再試行</li>
                     <li>ブラウザのキャッシュをクリアしてから再試行</li>
