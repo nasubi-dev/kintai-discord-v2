@@ -1,7 +1,7 @@
 import { SetupResult, Bindings, GoogleOAuthTokens } from "./types";
-import { SheetsService } from './sheets-service';
-import { ServerConfigService } from './server-config-service';
-import { CryptoService } from './crypto-service';
+import { SheetsService } from "./sheets-service";
+import { ServerConfigService } from "./server-config-service";
+import { CryptoService } from "./crypto-service";
 
 export class OAuthService {
   private kv: KVNamespace;
@@ -18,73 +18,156 @@ export class OAuthService {
     const state = crypto.randomUUID();
     const authData = { guildId, userId, timestamp: Date.now() };
 
-    await this.kv.put(`oauth_state:${state}`, JSON.stringify(authData), { expirationTtl: 600 });
+    await this.kv.put(`oauth_state:${state}`, JSON.stringify(authData), {
+      expirationTtl: 600,
+    });
     return this.generateSetupGuideUrl(guildId, state);
   }
 
   private generateSetupGuideUrl(guildId: string, state: string): string {
-    const params = new URLSearchParams({ guild: guildId, state: state, type: 'oauth_setup' });
+    const params = new URLSearchParams({
+      guild: guildId,
+      state: state,
+      type: "oauth_setup",
+    });
     return `https://kintai-discord-v2.r916nis1748.workers.dev/setup-guide?${params.toString()}`;
   }
 
-  async registerOAuthCredentials(guildId: string, userId: string, clientId: string, clientSecret: string, state: string): Promise<{ success: boolean; authUrl?: string; error?: string }> {
-    const authDataStr = await this.kv.get(`oauth_state:${state}`);
-    if (!authDataStr) {
-      return { success: false, error: '認証セッションが無効または期限切れです' };
+  async registerOAuthCredentials(
+    guildId: string,
+    userId: string,
+    clientId: string,
+    clientSecret: string,
+    state: string
+  ): Promise<{ success: boolean; authUrl?: string; error?: string }> {
+    try {
+      const authDataStr = await this.kv.get(`oauth_state:${state}`);
+      if (!authDataStr) {
+        return {
+          success: false,
+          error: "認証セッションが無効または期限切れです",
+        };
+      }
+
+      const credentialsData = { clientId, clientSecret, guildId, userId };
+      const credentialsJson = JSON.stringify(credentialsData);
+      const encryptedCredentials = await this.cryptoService.encrypt(
+        credentialsJson
+      );
+
+      await this.kv.put(`temp_oauth:${state}`, encryptedCredentials, {
+        expirationTtl: 3600,
+      });
+
+      const redirectUri = `https://kintai-discord-v2.r916nis1748.workers.dev/oauth/callback`;
+      const params = new URLSearchParams({
+        response_type: "code",
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        scope: "https://www.googleapis.com/auth/spreadsheets",
+        state: state,
+        access_type: "offline",
+        prompt: "consent",
+      });
+
+      return {
+        success: true,
+        authUrl: `https://accounts.google.com/o/oauth2/auth?${params.toString()}`,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object"
+          ? JSON.stringify(error, null, 2)
+          : String(error);
+
+      return {
+        success: false,
+        error: `OAuth認証情報の登録に失敗しました: ${errorMessage}`,
+      };
     }
-
-    const encryptedCredentials = await this.cryptoService.encrypt(JSON.stringify({ clientId, clientSecret, guildId, userId }));
-    await this.kv.put(`temp_oauth:${state}`, encryptedCredentials, { expirationTtl: 3600 });
-
-    const redirectUri = `https://kintai-discord-v2.r916nis1748.workers.dev/oauth/callback`;
-    const params = new URLSearchParams({
-      response_type: 'code',
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      scope: 'https://www.googleapis.com/auth/spreadsheets',
-      state: state,
-      access_type: 'offline',
-      prompt: 'consent'
-    });
-
-    return { success: true, authUrl: `https://accounts.google.com/o/oauth2/auth?${params.toString()}` };
   }
 
   async handleCallback(code: string, state: string): Promise<SetupResult> {
-    const tempKey = `temp_oauth:${state}`;
-    const encryptedCredentials = await this.kv.get(tempKey);
-    
-    if (!encryptedCredentials) {
-      return { success: false, error: '認証セッションが見つかりません' };
+    try {
+      const tempKey = `temp_oauth:${state}`;
+      const encryptedCredentials = await this.kv.get(tempKey);
+
+      if (!encryptedCredentials) {
+        return {
+          success: false,
+          error:
+            "認証セッションが見つかりません。セッションが期限切れの可能性があります。",
+        };
+      }
+
+      const credentialsStr = await this.cryptoService.decrypt(
+        encryptedCredentials
+      );
+      const credentials = JSON.parse(credentialsStr);
+
+      const tokenData = await this.exchangeCodeForTokens(
+        code,
+        credentials.clientId,
+        credentials.clientSecret
+      );
+      if (!tokenData.success) {
+        return {
+          success: false,
+          error: tokenData.error || "トークン取得に失敗しました",
+        };
+      }
+
+      const sheetsService = new SheetsService(
+        this.env,
+        tokenData.tokens!.access_token
+      );
+      const spreadsheetResult = await sheetsService.createKintaiSpreadsheet(
+        credentials.guildId
+      );
+
+      if (!spreadsheetResult.success) {
+        const errorDetails =
+          spreadsheetResult.error || "スプレッドシート作成に失敗";
+        return {
+          success: false,
+          error: `スプレッドシートの作成に失敗しました: ${errorDetails}`,
+        };
+      }
+
+      const serverConfigService = new ServerConfigService(this.env);
+      await serverConfigService.saveServerConfig(
+        credentials.guildId,
+        credentials.userId,
+        tokenData.tokens!,
+        spreadsheetResult.spreadsheetId!,
+        spreadsheetResult.spreadsheetUrl!
+      );
+
+      await this.kv.delete(`oauth_state:${state}`);
+      await this.kv.delete(tempKey);
+
+      return {
+        success: true,
+        guildId: credentials.guildId,
+        spreadsheetUrl: spreadsheetResult.spreadsheetUrl,
+        message:
+          "設定が完了しました！管理者のGoogleアカウントにスプレッドシートが作成されました。",
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object"
+          ? JSON.stringify(error, null, 2)
+          : String(error);
+
+      return {
+        success: false,
+        error: `OAuth認証処理中にエラーが発生しました: ${errorMessage}`,
+      };
     }
-
-    const credentialsStr = await this.cryptoService.decrypt(encryptedCredentials);
-    const credentials = JSON.parse(credentialsStr);
-
-    const tokenData = await this.exchangeCodeForTokens(code, credentials.clientId, credentials.clientSecret);
-    if (!tokenData.success) {
-      return { success: false, error: tokenData.error || 'トークン取得に失敗しました' };
-    }
-
-    const sheetsService = new SheetsService(this.env, tokenData.tokens!.access_token);
-    const spreadsheetResult = await sheetsService.createKintaiSpreadsheet(credentials.guildId);
-    
-    if (!spreadsheetResult.success) {
-      return { success: false, error: 'スプレッドシートの作成に失敗しました' };
-    }
-
-    const serverConfigService = new ServerConfigService(this.env);
-    await serverConfigService.saveServerConfig(credentials.guildId, credentials.userId, tokenData.tokens!, spreadsheetResult.spreadsheetId!, spreadsheetResult.spreadsheetUrl!);
-
-    await this.kv.delete(`oauth_state:${state}`);
-    await this.kv.delete(tempKey);
-
-    return {
-      success: true,
-      guildId: credentials.guildId,
-      spreadsheetUrl: spreadsheetResult.spreadsheetUrl,
-      message: '設定が完了しました！管理者のGoogleアカウントにスプレッドシートが作成されました。'
-    };
   }
 
   /**
@@ -96,40 +179,59 @@ export class OAuthService {
     clientSecret: string
   ): Promise<{ success: boolean; tokens?: GoogleOAuthTokens; error?: string }> {
     try {
-      const response = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
+      const response = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          "Content-Type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
           code: code,
           client_id: clientId,
           client_secret: clientSecret,
           redirect_uri: `https://kintai-discord-v2.r916nis1748.workers.dev/oauth/callback`,
-          grant_type: 'authorization_code',
+          grant_type: "authorization_code",
         }),
       });
 
       if (!response.ok) {
-        const errorData = await response.text();
-        console.error('Token exchange failed:', errorData);
-        return { 
-          success: false, 
-          error: 'Google認証サーバーからエラーが返されました' 
+        const errorText = await response.text();
+        let errorDetails = "";
+        try {
+          const errorData = JSON.parse(errorText);
+          errorDetails = `エラーコード: ${
+            errorData.error || "unknown"
+          }, 詳細: ${errorData.error_description || "no description"}`;
+        } catch {
+          errorDetails = `HTTPステータス: ${response.status}, レスポンス: ${errorText}`;
+        }
+
+        console.error("Token exchange failed:", {
+          status: response.status,
+          body: errorText,
+        });
+        return {
+          success: false,
+          error: `Google認証エラー - ${errorDetails}`,
         };
       }
 
-      const tokens = await response.json() as GoogleOAuthTokens;
+      const tokens = (await response.json()) as GoogleOAuthTokens;
       return {
         success: true,
-        tokens: tokens
+        tokens: tokens,
       };
-
     } catch (error) {
-      console.error('Token exchange error:', error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object"
+          ? JSON.stringify(error, null, 2)
+          : String(error);
+
+      console.error("Token exchange error:", error);
       return {
         success: false,
-        error: 'トークン取得処理中にエラーが発生しました'
+        error: `トークン取得処理中にエラーが発生しました: ${errorMessage}`,
       };
     }
   }
@@ -138,27 +240,37 @@ export class OAuthService {
    * Step 6: トークンリフレッシュ機能
    * アクセストークンが期限切れの場合、リフレッシュトークンで更新
    */
-  async refreshTokens(guildId: string): Promise<{ success: boolean; error?: string }> {
+  async refreshTokens(
+    guildId: string
+  ): Promise<{ success: boolean; error?: string }> {
     try {
       const serverConfigService = new ServerConfigService(this.env);
       const config = await serverConfigService.getServerConfig(guildId);
-      
+
       if (!config || !config.refresh_token) {
         return {
           success: false,
-          error: 'リフレッシュトークンが見つかりません'
+          error:
+            "リフレッシュトークンが見つかりません。再度セットアップが必要です。",
         };
       }
 
       // リフレッシュトークンを使用して新しいアクセストークンを取得
       // ここでは管理者の認証情報が必要になるため、事前に保存が必要
-      
+
       return { success: true };
     } catch (error) {
-      console.error('Token refresh error:', error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object"
+          ? JSON.stringify(error, null, 2)
+          : String(error);
+
+      console.error("Token refresh error:", error);
       return {
         success: false,
-        error: 'トークン更新に失敗しました'
+        error: `トークン更新に失敗しました: ${errorMessage}`,
       };
     }
   }
@@ -166,12 +278,14 @@ export class OAuthService {
   /**
    * アクセストークンを無効化
    */
-  async revokeToken(accessToken: string): Promise<{ success: boolean; error?: string }> {
+  async revokeToken(
+    accessToken: string
+  ): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await fetch('https://oauth2.googleapis.com/revoke', {
-        method: 'POST',
+      const response = await fetch("https://oauth2.googleapis.com/revoke", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          "Content-Type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
           token: accessToken,
@@ -179,16 +293,27 @@ export class OAuthService {
       });
 
       if (!response.ok) {
-        console.warn('Token revocation failed:', response.status);
+        const errorText = await response.text();
+        console.warn("Token revocation failed:", {
+          status: response.status,
+          body: errorText,
+        });
         // トークン無効化の失敗は致命的ではないので、成功として扱う
       }
 
       return { success: true };
     } catch (error) {
-      console.error('Token revocation error:', error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object"
+          ? JSON.stringify(error, null, 2)
+          : String(error);
+
+      console.error("Token revocation error:", error);
       return {
         success: false,
-        error: 'トークン無効化に失敗しました'
+        error: `トークン無効化に失敗しました: ${errorMessage}`,
       };
     }
   }

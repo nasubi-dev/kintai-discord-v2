@@ -3,10 +3,10 @@ import { Bindings } from "./types";
 
 // Discord API型定義 - 型安全性とIntelliSense向上のため使用
 import {
-  InteractionType,        // インタラクションタイプ（ApplicationCommand等）
+  InteractionType, // インタラクションタイプ（ApplicationCommand等）
   InteractionResponseType, // レスポンスタイプ（DeferredChannelMessage等）
-  MessageFlags,           // メッセージフラグ（Ephemeral等）
-  APIInteraction,         // インタラクションの型定義
+  MessageFlags, // メッセージフラグ（Ephemeral等）
+  APIInteraction, // インタラクションの型定義
 } from "discord-api-types/v10";
 import {
   verifyDiscordRequest,
@@ -107,15 +107,20 @@ app.post("/api/interactions", async (c) => {
     });
   } catch (error) {
     console.error("Interaction processing error:", error);
-    console.error(
-      "Error stack:",
-      error instanceof Error ? error.stack : "No stack available"
-    );
+    const errorDetails = {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      type: typeof error,
+      error: error instanceof Error ? error.name : typeof error,
+    };
+    console.error("Error details:", errorDetails);
+
     return c.json(
       {
         type: InteractionResponseType.ChannelMessageWithSource,
         data: {
-          content: "❌ リクエストの処理中にエラーが発生しました。",
+          content:
+            "❌ リクエストの処理中にエラーが発生しました。しばらく待ってから再試行してください。",
           flags: 64, // EPHEMERAL
         },
       },
@@ -248,16 +253,37 @@ async function handleSlashCommandDeferred(
     }
   } catch (error) {
     console.error("Command processing error:", error);
+    console.error("Error details:", {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      type: typeof error,
+      error: error,
+    });
 
     await discordApiService.deleteOriginalResponse(
       c.env.DISCORD_APPLICATION_ID,
       token
     );
 
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : typeof error === "object"
+        ? JSON.stringify(error, null, 2)
+        : String(error);
+
+    // Discord のメッセージ制限 (2000文字) を考慮して、エラーメッセージを適切な長さに調整
+    const maxErrorLength = 1500; // 他のテキストのためのマージンを考慮
+    const truncatedErrorMessage =
+      errorMessage.length > maxErrorLength
+        ? errorMessage.substring(0, maxErrorLength) +
+          "\n\n... (エラーメッセージが長すぎるため省略されました)"
+        : errorMessage;
+
     await discordApiService.createFollowupMessage(
       c.env.DISCORD_APPLICATION_ID,
       token,
-      "❌ 処理中にエラーが発生しました。しばらく待ってから再試行してください。",
+      `❌ 処理中にエラーが発生しました\n\n**エラー詳細**:\n\`\`\`\n${truncatedErrorMessage}\n\`\`\`\n\nしばらく待ってから再試行してください。\n問題が続く場合は管理者にお問い合わせください。`,
       true // ephemeral
     );
   }
@@ -462,7 +488,11 @@ async function handleStartCommandWithRetry(
 
       if (attempt === maxRetries) {
         const errorMessage =
-          error instanceof Error ? error.message : "不明なエラー";
+          error instanceof Error
+            ? error.message
+            : typeof error === "object"
+            ? JSON.stringify(error, null, 2)
+            : String(error);
 
         // エラーの場合：元のレスポンスを削除し、EPHEMERALフォローアップメッセージを送信
         await discordApiService.deleteOriginalResponse(
@@ -655,7 +685,11 @@ async function handleEndCommandWithRetry(
 
       if (attempt === maxRetries) {
         const errorMessage =
-          error instanceof Error ? error.message : "不明なエラー";
+          error instanceof Error
+            ? error.message
+            : typeof error === "object"
+            ? JSON.stringify(error, null, 2)
+            : String(error);
 
         // エラーの場合：元のレスポンスを削除し、EPHEMERALフォローアップメッセージを送信
         await discordApiService.deleteOriginalResponse(
@@ -781,8 +815,12 @@ app.get("/oauth/callback", async (c) => {
           <body>
             <div class="container">
               <h1 class="error">❌ 設定エラー</h1>
-              <p>${result.error}</p>
+              <p><strong>エラー内容:</strong></p>
+              <div style="background: #f8f9fa; padding: 15px; border-left: 4px solid #dc3545; margin: 10px 0; text-align: left;">
+                ${result.error || "不明なエラーが発生しました"}
+              </div>
               <p>Discord に戻って再度 /setup コマンドを実行してください。</p>
+              <p>問題が続く場合は、管理者にお問い合わせください。</p>
             </div>
           </body>
         </html>
@@ -790,6 +828,17 @@ app.get("/oauth/callback", async (c) => {
     }
   } catch (error) {
     console.error("OAuth callback error:", error);
+
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : typeof error === "object"
+        ? JSON.stringify(error, null, 2)
+        : String(error);
+
+    const errorStack =
+      error instanceof Error ? error.stack : "スタックトレースなし";
+
     return c.html(`
       <html>
         <head>
@@ -798,8 +847,20 @@ app.get("/oauth/callback", async (c) => {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <style>
             body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
-            .container { max-width: 500px; margin: 0 auto; }
+            .container { max-width: 600px; margin: 0 auto; }
             .error { color: #dc3545; }
+            .error-details { 
+              background: #f8f9fa; 
+              padding: 15px; 
+              border-left: 4px solid #dc3545; 
+              margin: 15px 0; 
+              text-align: left; 
+              font-family: monospace; 
+              white-space: pre-wrap; 
+              word-break: break-word;
+              max-height: 300px;
+              overflow-y: auto;
+            }
           </style>
         </head>
         <body>
@@ -807,11 +868,14 @@ app.get("/oauth/callback", async (c) => {
             <h1 class="error">❌ 設定エラー</h1>
             <p>認証処理中にエラーが発生しました。管理者にお問い合わせください。</p>
             <details>
-              <summary>エラー詳細</summary>
-              <pre>${
-                error instanceof Error ? error.message : String(error)
-              }</pre>
+              <summary>エラー詳細 (クリックして表示)</summary>
+              <div class="error-details">${errorMessage}</div>
+              <details>
+                <summary>スタックトレース</summary>
+                <div class="error-details">${errorStack}</div>
+              </details>
             </details>
+            <p>Discord に戻って再度 /setup コマンドを実行してください。</p>
           </div>
         </body>
       </html>

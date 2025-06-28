@@ -10,11 +10,19 @@ export class ServerConfigService {
     this.cryptoService = new CryptoService(env.ENCRYPTION_KEY);
   }
 
-  async saveServerConfig(guildId: string, ownerId: string, tokens: GoogleOAuthTokens, spreadsheetId: string, sheetUrl: string): Promise<void> {
+  async saveServerConfig(
+    guildId: string,
+    ownerId: string,
+    tokens: GoogleOAuthTokens,
+    spreadsheetId: string,
+    sheetUrl: string
+  ): Promise<void> {
     const config: ServerConfig = {
       spreadsheet_id: spreadsheetId,
       access_token: await this.cryptoService.encrypt(tokens.access_token),
-      refresh_token: tokens.refresh_token ? await this.cryptoService.encrypt(tokens.refresh_token) : "",
+      refresh_token: tokens.refresh_token
+        ? await this.cryptoService.encrypt(tokens.refresh_token)
+        : "",
       sheet_url: sheetUrl,
       owner_id: ownerId,
       created_at: new Date().toISOString(),
@@ -29,18 +37,28 @@ export class ServerConfigService {
     return {
       ...config,
       access_token: await this.cryptoService.decrypt(config.access_token),
-      refresh_token: config.refresh_token ? await this.cryptoService.decrypt(config.refresh_token) : "",
+      refresh_token: config.refresh_token
+        ? await this.cryptoService.decrypt(config.refresh_token)
+        : "",
     };
   }
 
-  async updateAccessToken(guildId: string, newTokens: GoogleOAuthTokens): Promise<void> {
+  async updateAccessToken(
+    guildId: string,
+    newTokens: GoogleOAuthTokens
+  ): Promise<void> {
     const config = await this.getServerConfig(guildId);
     if (!config) throw new Error("Server config not found");
-    await this.kv.put(`server:${guildId}`, JSON.stringify({
-      ...config,
-      access_token: await this.cryptoService.encrypt(newTokens.access_token),
-      refresh_token: newTokens.refresh_token ? await this.cryptoService.encrypt(newTokens.refresh_token) : config.refresh_token,
-    }));
+    await this.kv.put(
+      `server:${guildId}`,
+      JSON.stringify({
+        ...config,
+        access_token: await this.cryptoService.encrypt(newTokens.access_token),
+        refresh_token: newTokens.refresh_token
+          ? await this.cryptoService.encrypt(newTokens.refresh_token)
+          : config.refresh_token,
+      })
+    );
   }
 
   async deleteServerConfig(guildId: string): Promise<void> {
@@ -55,17 +73,22 @@ export class ServerConfigService {
     return (await this.getServerConfig(guildId))?.owner_id === userId;
   }
 
-  async getServerStatus(guildId: string): Promise<{ configured: boolean; spreadsheetUrl?: string; createdAt?: string; ownerId?: string; }> {
+  async getServerStatus(
+    guildId: string
+  ): Promise<{
+    configured: boolean;
+    spreadsheetUrl?: string;
+    createdAt?: string;
+    ownerId?: string;
+  }> {
     const config = await this.getServerConfig(guildId);
-    return config ? { configured: true, spreadsheetUrl: config.sheet_url, createdAt: config.created_at, ownerId: config.owner_id } : { configured: false };
-  }
-
-  async saveGASConfig(guildId: string, ownerId: string, gasUrl: string): Promise<void> {
-    await this.kv.put(`server:${guildId}`, JSON.stringify({
-      gas_url: gasUrl,
-      owner_id: ownerId,
-      created_at: new Date().toISOString(),
-      setup_method: "gas",
-    }));
+    return config
+      ? {
+          configured: true,
+          spreadsheetUrl: config.sheet_url,
+          createdAt: config.created_at,
+          ownerId: config.owner_id,
+        }
+      : { configured: false };
   }
 }
