@@ -52,15 +52,29 @@ export class SheetsService {
     operation: string
   ): Promise<any> {
     if (!response.ok) {
-      const errorData = await response.text();
+      const errorText = await response.text();
+      let errorDetails = "";
+
+      try {
+        const errorData = JSON.parse(errorText);
+        const errorMessage = errorData.error?.message || "unknown error";
+        const errorCode = errorData.error?.code || response.status;
+        errorDetails = `${errorCode}: ${errorMessage}`;
+
+        if (errorData.error?.details) {
+          errorDetails += ` (詳細: ${JSON.stringify(errorData.error.details)})`;
+        }
+      } catch {
+        errorDetails = `${response.status} ${response.statusText}`;
+      }
+
       console.error(`Sheets API Error (${operation}):`, {
         status: response.status,
         statusText: response.statusText,
-        error: errorData,
+        errorBody: errorText,
       });
-      throw new Error(
-        `${operation}に失敗しました: ${response.status} ${response.statusText}`
-      );
+
+      throw new Error(`${operation}に失敗しました: ${errorDetails}`);
     }
     return response.json();
   }
@@ -111,7 +125,8 @@ export class SheetsService {
    */
   private async setupKintaiHeaders(
     spreadsheetId: string,
-    sheetTitle: string
+    sheetTitle: string,
+    sheetId: number = 0
   ): Promise<void> {
     // ヘッダー行を設定
     await this.updateRange(spreadsheetId, `${sheetTitle}!A1:H1`, [
@@ -119,11 +134,11 @@ export class SheetsService {
     ]);
 
     // ヘッダー行のフォーマットを設定
-    await this.formatHeaders(spreadsheetId, 0); // 最初のシートのID
+    await this.formatHeaders(spreadsheetId, sheetId);
   }
 
   /**
-   * ヘッダー行のフォーマットを設定（改善版）
+   * ヘッダー行のフォーマットを設定（修正版）
    */
   private async formatHeaders(
     spreadsheetId: string,
@@ -161,7 +176,6 @@ export class SheetsService {
             "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)",
         },
       },
-      // 列幅の自動調整
       {
         autoResizeDimensions: {
           dimensions: {
@@ -183,7 +197,22 @@ export class SheetsService {
       }
     );
 
-    await this.handleApiResponse(response, "ヘッダーフォーマット設定");
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorDetails = "";
+      try {
+        const errorData = JSON.parse(errorText);
+        errorDetails = `Google Sheets API エラー: ${
+          errorData.error?.message || "unknown error"
+        }`;
+      } catch {
+        errorDetails = `HTTP ${response.status}: ${response.statusText}`;
+      }
+
+      throw new Error(
+        `ヘッダーフォーマット設定に失敗しました: ${errorDetails}`
+      );
+    }
   }
 
   /**
@@ -323,8 +352,12 @@ export class SheetsService {
       const spreadsheetId = spreadsheetData.spreadsheetId;
       const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
 
+      // 最初のシートのIDを取得
+      const firstSheetId =
+        spreadsheetData.sheets?.[0]?.properties?.sheetId || 0;
+
       // 統一されたヘッダー行を追加
-      await this.setupKintaiHeaders(spreadsheetId, currentMonth);
+      await this.setupKintaiHeaders(spreadsheetId, currentMonth, firstSheetId);
 
       return {
         success: true,
@@ -332,13 +365,16 @@ export class SheetsService {
         spreadsheetUrl,
       };
     } catch (error) {
-      console.error("Spreadsheet creation error:", error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object"
+          ? JSON.stringify(error, null, 2)
+          : String(error);
+
       return {
         success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "スプレッドシート作成中に不明なエラーが発生しました",
+        error: `スプレッドシート作成中にエラーが発生しました: ${errorMessage}`,
       };
     }
   }
@@ -400,11 +436,17 @@ export class SheetsService {
         recordId,
       };
     } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object"
+          ? JSON.stringify(error, null, 2)
+          : String(error);
+
       console.error("Failed to record start time:", error);
       return {
         success: false,
-        error:
-          error instanceof Error ? error.message : "記録の保存に失敗しました",
+        error: `勤務開始時刻の記録に失敗しました: ${errorMessage}`,
       };
     }
   }
@@ -469,11 +511,17 @@ export class SheetsService {
         workHours,
       };
     } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object"
+          ? JSON.stringify(error, null, 2)
+          : String(error);
+
       console.error("Failed to record end time:", error);
       return {
         success: false,
-        error:
-          error instanceof Error ? error.message : "記録の更新に失敗しました",
+        error: `勤務終了時刻の記録に失敗しました: ${errorMessage}`,
       };
     }
   }
@@ -517,7 +565,6 @@ export class SheetsService {
         .toString()
         .padStart(2, "0")}`;
     } catch (error) {
-      console.error("Failed to calculate work hours:", error);
       return "計算エラー";
     }
   }
