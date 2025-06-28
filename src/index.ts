@@ -363,22 +363,45 @@ async function handleStartCommandWithRetry(
         startTime = new Date();
       }
 
-      // KVで重複チェック（高速）
+      console.log(
+        `Checking KV for key: ${kvKey} (userId: ${userId}, channelId: ${channelId})`
+      );
       const existingRecord = await c.env.KINTAI_DISCORD_KV.get(kvKey);
-      if (existingRecord) {
-        // エラーの場合：元のレスポンスを削除し、EPHEMERALフォローアップメッセージを送信
-        await discordApiService.deleteOriginalResponse(
-          c.env.DISCORD_APPLICATION_ID,
-          token
-        );
+      console.log(`Existing record found:`, existingRecord ? "YES" : "NO");
 
-        await discordApiService.createFollowupMessage(
-          c.env.DISCORD_APPLICATION_ID,
-          token,
-          "❌ 既に勤務を開始しています\n\n先に `/end` コマンドで終了してください。",
-          true // ephemeral
-        );
-        return;
+      if (existingRecord) {
+        console.log(`Existing record data:`, existingRecord);
+
+        // 古いレコード（24時間以上前）をチェックして削除
+        const recordData = JSON.parse(existingRecord);
+        const recordTime = new Date(recordData.startTime);
+        const now = new Date();
+        const timeDiff = now.getTime() - recordTime.getTime();
+        const hoursDiff = timeDiff / (1000 * 60 * 60);
+
+        if (hoursDiff > 24) {
+          console.log(
+            `Found stale record (${hoursDiff.toFixed(
+              1
+            )} hours old), deleting...`
+          );
+          await c.env.KINTAI_DISCORD_KV.delete(kvKey);
+          console.log(`Stale record deleted, proceeding with start command`);
+        } else {
+          // まだ有効なレコードの場合
+          await discordApiService.deleteOriginalResponse(
+            c.env.DISCORD_APPLICATION_ID,
+            token
+          );
+
+          await discordApiService.createFollowupMessage(
+            c.env.DISCORD_APPLICATION_ID,
+            token,
+            "❌ 既に勤務を開始しています\n\n先に `/end` コマンドで終了してください。",
+            true // ephemeral
+          );
+          return;
+        }
       }
 
       // チャンネル名取得
@@ -468,6 +491,8 @@ async function handleStartCommandWithRetry(
           JSON.stringify(kvRecord),
           { expirationTtl: 86400 } // 24時間
         );
+
+        console.log(`Stored KV record with key: ${kvKey}`, kvRecord);
 
         await discordApiService.editDeferredResponse(
           c.env.DISCORD_APPLICATION_ID,
