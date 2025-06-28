@@ -1,4 +1,5 @@
 import { GoogleSheetsResponse, GoogleOAuthTokens, Bindings } from "./types";
+import { parseDateTimeFromJST } from "./utils";
 
 // スプレッドシートのカラム定義を統一（新しいテーブル構造に対応）
 const KINTAI_COLUMNS = {
@@ -662,5 +663,164 @@ export class SheetsService {
     });
 
     return this.handleApiResponse(response, "スプレッドシート情報取得");
+  }
+
+  /**
+   * 指定ユーザーの勤務開始済み記録をチェック（スプレッドシート直接確認）
+   * KVの代わりにスプレッドシートを直接確認して再打刻を防ぐ
+   */
+  async checkActiveWorkSession(
+    accessToken: string,
+    spreadsheetId: string,
+    userId: string,
+    channelId: string
+  ): Promise<{
+    hasActiveSession: boolean;
+    startTime?: string;
+    recordId?: string;
+    error?: string;
+  }> {
+    try {
+      this.accessToken = accessToken;
+
+      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+      const sheetName = currentMonth;
+
+      // シートが存在するかチェック
+      const sheetsData = await this.getSpreadsheetInfo(spreadsheetId);
+      const sheetExists = sheetsData.sheets?.some(
+        (sheet: any) => sheet.properties.title === sheetName
+      );
+
+      if (!sheetExists) {
+        // シートが存在しない場合はアクティブセッションなし
+        return { hasActiveSession: false };
+      }
+
+      // 該当ユーザーの未完了記録を検索
+      const range = `${sheetName}!A:H`;
+      const values = await this.getRange(spreadsheetId, range);
+
+      for (let i = 1; i < values.length; i++) {
+        // ヘッダー行をスキップ
+        const row = values[i];
+        
+        // discord_id、channel_idが一致し、終了時刻が空の記録を検索
+        if (
+          row[KINTAI_COLUMNS.DISCORD_ID] === userId &&
+          row[KINTAI_COLUMNS.CHANNEL_ID] === channelId &&
+          row[KINTAI_COLUMNS.END_TIME] === ""
+        ) {
+          // 開始時刻が24時間以内かチェック
+          const startTimeStr = row[KINTAI_COLUMNS.START_TIME];
+          if (startTimeStr) {
+            const startTime = parseDateTimeFromJST(startTimeStr);
+            if (startTime) {
+              const now = new Date();
+              const timeDiff = now.getTime() - startTime.getTime();
+              const hoursDiff = timeDiff / (1000 * 60 * 60);
+
+              if (hoursDiff <= 24) {
+                // 24時間以内のアクティブセッションが存在
+                return {
+                  hasActiveSession: true,
+                  startTime: startTimeStr,
+                  recordId: row[KINTAI_COLUMNS.UUID] || undefined,
+                };
+              }
+            }
+          }
+        }
+      }
+
+      return { hasActiveSession: false };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object"
+          ? JSON.stringify(error, null, 2)
+          : String(error);
+
+      console.error("Failed to check active work session:", error);
+      return {
+        hasActiveSession: false,
+        error: `アクティブセッションの確認に失敗しました: ${errorMessage}`,
+      };
+    }
+  }
+
+  /**
+   * 指定ユーザーの未完了勤務記録を取得（終了処理用）
+   * KVの代わりにスプレッドシートを直接確認
+   */
+  async getActiveWorkRecord(
+    accessToken: string,
+    spreadsheetId: string,
+    userId: string,
+    channelId: string
+  ): Promise<{
+    found: boolean;
+    recordId?: string;
+    startTime?: string;
+    username?: string;
+    projectName?: string;
+    error?: string;
+  }> {
+    try {
+      this.accessToken = accessToken;
+
+      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+      const sheetName = currentMonth;
+
+      // シートが存在するかチェック
+      const sheetsData = await this.getSpreadsheetInfo(spreadsheetId);
+      const sheetExists = sheetsData.sheets?.some(
+        (sheet: any) => sheet.properties.title === sheetName
+      );
+
+      if (!sheetExists) {
+        return { found: false };
+      }
+
+      // 該当ユーザーの未完了記録を検索
+      const range = `${sheetName}!A:H`;
+      const values = await this.getRange(spreadsheetId, range);
+
+      for (let i = 1; i < values.length; i++) {
+        // ヘッダー行をスキップ
+        const row = values[i];
+        
+        // discord_id、channel_idが一致し、終了時刻が空の記録を検索
+        if (
+          row[KINTAI_COLUMNS.DISCORD_ID] === userId &&
+          row[KINTAI_COLUMNS.CHANNEL_ID] === channelId &&
+          row[KINTAI_COLUMNS.END_TIME] === ""
+        ) {
+          return {
+            found: true,
+            recordId: row[KINTAI_COLUMNS.UUID] || undefined,
+            startTime: row[KINTAI_COLUMNS.START_TIME] || undefined,
+            username: row[KINTAI_COLUMNS.USERNAME] || undefined,
+            projectName: row[KINTAI_COLUMNS.PROJECT] || undefined,
+          };
+        }
+      }
+
+      return { found: false };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object"
+          ? JSON.stringify(error, null, 2)
+          : String(error);
+
+      console.error("Failed to get active work record:", error);
+      return {
+        found: false,
+        error: `アクティブ勤務記録の取得に失敗しました: ${errorMessage}`,
+      };
+    }
   }
 }
