@@ -28,9 +28,9 @@ export class OAuthService {
     const params = new URLSearchParams({
       guild: guildId,
       state: state,
-      type: "oauth_setup",
+      type: "oauth_init",
     });
-    return `https://kintai-discord-v2.r916nis1748.workers.dev/setup-guide?${params.toString()}`;
+    return `https://kintai-discord-v2.r916nis1748.workers.dev/init-guide?${params.toString()}`;
   }
 
   async registerOAuthCredentials(
@@ -376,9 +376,9 @@ export class OAuthService {
 }
 
 /**
- * 管理者向けセットアップガイドのHTMLコンテンツ
+ * 管理者向け初期設定ガイドのHTMLコンテンツ
  */
-export const OAUTH_SETUP_GUIDE = `
+export const OAUTH_INIT_GUIDE = `
 <!DOCTYPE html>
 <html lang="ja">
 <head>

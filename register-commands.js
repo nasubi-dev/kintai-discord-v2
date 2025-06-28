@@ -55,12 +55,12 @@ async function registerCommands() {
       ],
     },
     {
-      name: "setup",
+      name: "init",
       type: 1, // CHAT_INPUT
       description: "勤怠管理システムを初期設定します（管理者のみ）",
     },
     {
-      name: "status",
+      name: "config",
       type: 1, // CHAT_INPUT
       description: "勤怠管理システムの設定状況を確認します",
     },

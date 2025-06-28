@@ -230,10 +230,10 @@ async function handleSlashCommandDeferred(
           customTimeString
         );
         break;
-      case "setup":
+      case "init":
         await handleSetupCommand(c, interaction, discordApiService, token);
         break;
-      case "status":
+      case "config":
         await handleStatusCommand(c, interaction, discordApiService, token);
         break;
       case "reset":
@@ -441,7 +441,7 @@ async function handleStartCommandWithRetry(
         await discordApiService.createFollowupMessage(
           c.env.DISCORD_APPLICATION_ID,
           token,
-          "❌ サーバーが設定されていません。\n管理者に `/setup` コマンドの実行を依頼してください。",
+          "❌ サーバーが設定されていません。\n管理者に `/init` コマンドの実行を依頼してください。",
           true // ephemeral
         );
         return;
@@ -460,7 +460,7 @@ async function handleStartCommandWithRetry(
         await discordApiService.createFollowupMessage(
           c.env.DISCORD_APPLICATION_ID,
           token,
-          "❌ サーバー設定が見つかりません。管理者に `/setup` コマンドの実行を依頼してください。",
+          "❌ サーバー設定が見つかりません。管理者に `/init` コマンドの実行を依頼してください。",
           true // ephemeral
         );
         return;
@@ -671,7 +671,7 @@ async function handleEndCommandWithRetry(
         await discordApiService.createFollowupMessage(
           c.env.DISCORD_APPLICATION_ID,
           token,
-          "❌ サーバー設定が見つかりません。管理者に `/setup` コマンドの実行を依頼してください。",
+          "❌ サーバー設定が見つかりません。管理者に `/init` コマンドの実行を依頼してください。",
           true // ephemeral
         );
         return;
@@ -856,7 +856,7 @@ app.get("/oauth/callback", async (c) => {
           <body>
             <div class="container">
               <h1 class="error">❌ 認証がキャンセルされました</h1>
-              <p>Discord に戻って再度 /setup コマンドを実行してください。</p>
+              <p>Discord に戻って再度 /init コマンドを実行してください。</p>
             </div>
           </body>
         </html>
@@ -879,7 +879,7 @@ app.get("/oauth/callback", async (c) => {
           <body>
             <div class="container">
               <h1 class="error">❌ 認証パラメータが不正です</h1>
-              <p>Discord に戻って再度 /setup コマンドを実行してください。</p>
+              <p>Discord に戻って再度 /init コマンドを実行してください。</p>
             </div>
           </body>
         </html>
@@ -908,7 +908,7 @@ app.get("/oauth/callback", async (c) => {
               <h1 class="success">✅ 設定完了！</h1>
               <p>勤怠管理システムの設定が完了しました。</p>
               <p><a href="${result.spreadsheetUrl}" target="_blank">📊 スプレッドシートを開く</a></p>
-              <p>Discord に戻って <code>/status</code> コマンドで設定を確認できます。</p>
+              <p>Discord に戻って <code>/config</code> コマンドで設定を確認できます。</p>
               <script>
                 setTimeout(() => {
                   window.close();
@@ -938,7 +938,7 @@ app.get("/oauth/callback", async (c) => {
               <div style="background: #f8f9fa; padding: 15px; border-left: 4px solid #dc3545; margin: 10px 0; text-align: left;">
                 ${result.error || "不明なエラーが発生しました"}
               </div>
-              <p>Discord に戻って再度 /setup コマンドを実行してください。</p>
+              <p>Discord に戻って再度 /init コマンドを実行してください。</p>
               <p>問題が続く場合は、管理者にお問い合わせください。</p>
             </div>
           </body>
@@ -994,7 +994,7 @@ app.get("/oauth/callback", async (c) => {
                 <div class="error-details">${errorStack}</div>
               </details>
             </details>
-            <p>Discord に戻って再度 /setup コマンドを実行してください。</p>
+            <p>Discord に戻って再度 /init コマンドを実行してください。</p>
           </div>
         </body>
       </html>
@@ -1092,7 +1092,7 @@ Google スプレッドシートとの連携設定を行います。
 ### 手順
 1. 下記のリンクをクリックしてGoogle認証を完了してください
 2. 認証完了後、自動でスプレッドシートが作成されます
-3. \`/status\` コマンドで設定を確認できます
+3. \`/config\` コマンドで設定を確認できます
 
 **🔗 認証リンク**
 ${authUrl}
@@ -1147,7 +1147,7 @@ async function handleStatusCommand(
 ❌ **未設定**
 
 勤怠管理システムが設定されていません。
-\`/setup\` コマンドで初期設定を行ってください。
+\`/init\` コマンドで初期設定を行ってください。
 
 **必要な権限**: 管理者`,
         true
@@ -1228,7 +1228,7 @@ async function handleResetCommand(
       await discordApiService.editDeferredResponse(
         c.env.DISCORD_APPLICATION_ID,
         token,
-        "⚠️ 設定が見つかりません。\n`/setup` コマンドで初期設定を行ってください。",
+        "⚠️ 設定が見つかりません。\n`/init` コマンドで初期設定を行ってください。",
         true
       );
       return;
@@ -1262,7 +1262,7 @@ async function handleResetCommand(
 - 保存されていた認証情報
 
 **次の手順**
-新しく設定する場合は \`/setup\` コマンドを実行してください。
+新しく設定する場合は \`/init\` コマンドを実行してください。
 
 ⚠️ **注意**: スプレッドシート自体は削除されません。`,
       true
@@ -1279,19 +1279,19 @@ async function handleResetCommand(
 }
 
 // セットアップガイドページ
-app.get("/setup-guide", async (c) => {
+app.get("/init-guide", async (c) => {
   const url = new URL(c.req.url);
   const guildId = url.searchParams.get("guild");
   const state = url.searchParams.get("state");
   const type = url.searchParams.get("type");
 
-  if (!guildId || !state || type !== "oauth_setup") {
+  if (!guildId || !state || type !== "oauth_init") {
     return c.html(`
       <html>
         <head><title>無効なリクエスト</title></head>
         <body>
           <h1>❌ 無効なリクエストです</h1>
-          <p>Discordに戻って /setup コマンドを再実行してください。</p>
+          <p>Discordに戻って /init コマンドを再実行してください。</p>
         </body>
       </html>
     `);
