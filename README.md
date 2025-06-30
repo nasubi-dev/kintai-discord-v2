@@ -87,7 +87,7 @@ Discord のスラッシュコマンドで簡単に勤怠記録ができるボッ
 #### 4. Google OAuth エラー
 
 - **redirect_uri_mismatch**: Google Cloud Console のリダイレクト URI 設定を確認
-- **権限不足**: Google Sheets API と Google Drive API が有効化されているか確認
+- **権限不足**: Google Sheets API が有効化されているか確認
 - 設定ガイドページの手順を再度確認してください
 
 #### 5. データが記録されない
