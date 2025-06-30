@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { Bindings } from "./types";
+import { Bindings, DiscordGuild, BotStats, DetailedBotStats } from "./types";
 
 // Discord API型定義 - 型安全性とIntelliSense向上のため使用
 import {
@@ -138,6 +138,126 @@ app.get("/", (c) => {
     version: "1.0.0",
     timestamp: new Date().toISOString(),
   });
+});
+
+// Discord Botの統計情報を取得するエンドポイント
+app.get("/api/stats", async (c) => {
+  try {
+    console.log("Getting bot statistics...");
+
+    // Discord APIからボットが参加しているサーバー一覧を取得
+    const response = await fetch(
+      "https://discord.com/api/v10/users/@me/guilds",
+      {
+        headers: {
+          Authorization: `Bot ${c.env.DISCORD_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.error(
+        `Discord API error: ${response.status} - ${await response.text()}`
+      );
+      return c.json(
+        {
+          success: false,
+          error: "Discord APIからサーバー情報を取得できませんでした",
+        },
+        500
+      );
+    }
+
+    const guilds = (await response.json()) as DiscordGuild[];
+    const serverCount = guilds.length;
+
+    console.log(`Bot is in ${serverCount} servers`);
+
+    const stats: BotStats = {
+      serverCount,
+      timestamp: new Date().toISOString(),
+      version: "2.0",
+    };
+
+    return c.json({
+      success: true,
+      data: stats,
+    });
+  } catch (error) {
+    console.error("Error getting bot statistics:", error);
+    return c.json(
+      {
+        success: false,
+        error: "統計情報の取得中にエラーが発生しました",
+      },
+      500
+    );
+  }
+});
+
+// 詳細な統計情報を取得するエンドポイント
+app.get("/api/stats/detailed", async (c) => {
+  try {
+    console.log("Getting detailed bot statistics...");
+
+    // Discord APIからサーバー情報を取得
+    const guildsResponse = await fetch(
+      "https://discord.com/api/v10/users/@me/guilds",
+      {
+        headers: {
+          Authorization: `Bot ${c.env.DISCORD_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!guildsResponse.ok) {
+      throw new Error(`Discord API error: ${guildsResponse.status}`);
+    }
+
+    const guilds = (await guildsResponse.json()) as DiscordGuild[];
+
+    // KVから設定済みサーバー数を取得
+    const serverConfigService = new ServerConfigService(c.env);
+    let configuredServers = 0;
+
+    // 各サーバーの設定状況をチェック
+    for (const guild of guilds) {
+      const hasConfig = await serverConfigService.hasServerConfig(guild.id);
+      if (hasConfig) {
+        configuredServers++;
+      }
+    }
+
+    const stats: DetailedBotStats = {
+      totalServers: guilds.length,
+      configuredServers,
+      unconfiguredServers: guilds.length - configuredServers,
+      configurationRate:
+        guilds.length > 0
+          ? Math.round((configuredServers / guilds.length) * 100)
+          : 0,
+      timestamp: new Date().toISOString(),
+      version: "2.0",
+    };
+
+    console.log("Bot statistics:", stats);
+
+    return c.json({
+      success: true,
+      data: stats,
+    });
+  } catch (error) {
+    console.error("Error getting detailed bot statistics:", error);
+    return c.json(
+      {
+        success: false,
+        error: "詳細統計情報の取得中にエラーが発生しました",
+      },
+      500
+    );
+  }
 });
 
 // 404エラーハンドリング
@@ -812,7 +932,7 @@ async function handleEndCommandWithRetry(
         );
 
         const debugInfo = `\n🔍 **詳細**: チャンネルID: \`${channelId}\``;
-        const recordInfo = activeWorkRecord?.recordId 
+        const recordInfo = activeWorkRecord?.recordId
           ? `\n📝 **記録ID**: \`${activeWorkRecord.recordId}\``
           : "";
 
