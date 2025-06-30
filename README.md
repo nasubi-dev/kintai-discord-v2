@@ -40,7 +40,7 @@ Discord のスラッシュコマンドで簡単に勤怠記録ができるボッ
 
 ### ステップ 1: Bot を Discord サーバーに招待
 
-[**こちらから Bot を招待**](https://discord.com/oauth2/authorize?client_id=YOUR_BOT_ID&scope=bot%20applications.commands&permissions=2147483648)
+[**こちらから Bot を招待**](https://discord.com/oauth2/authorize?client_id=1388221578675748904&permissions=2147552256&integration_type=0&scope=bot+applications.commands)
 
 必要な権限: `チャンネルを見る`, `メッセージを送信`, `スラッシュコマンドを使用`
 
