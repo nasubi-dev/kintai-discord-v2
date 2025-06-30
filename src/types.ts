@@ -128,3 +128,29 @@ export interface GoogleSheetsResponse {
   };
   sheets?: any[];
 }
+
+// Discord Guild関連の型定義
+export interface DiscordGuild {
+  id: string;
+  name: string;
+  icon?: string;
+  owner?: boolean;
+  permissions?: string;
+  features?: string[];
+}
+
+// Bot統計情報の型定義
+export interface BotStats {
+  serverCount: number;
+  timestamp: string;
+  version: string;
+}
+
+export interface DetailedBotStats {
+  totalServers: number;
+  configuredServers: number;
+  unconfiguredServers: number;
+  configurationRate: number;
+  timestamp: string;
+  version: string;
+}
