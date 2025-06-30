@@ -69,7 +69,7 @@ if (needsGoogleSetup || needsEncryptionKey) {
     console.log('4. 認証情報 → OAuth クライアント ID を作成');
     console.log('5. ウェブアプリケーション を選択');
     console.log('6. リダイレクト URI に以下を追加:');
-    console.log(`   ${currentEnv.GOOGLE_REDIRECT_URI || 'https://kintai-discord.nasubi.dev/oauth/callback'}`);
+    console.log(`   ${currentEnv.GOOGLE_REDIRECT_URI || 'https://kintai-discord-v2.nasubi.dev/oauth/callback'}`);
     console.log('7. クライアント ID と クライアント シークレット を .dev.vars に設定');
   }
 } else {
