@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { Bindings, DiscordGuild, BotStats, DetailedBotStats } from "./types";
 
 // Discord API型定義 - 型安全性とIntelliSense向上のため使用
@@ -22,6 +23,22 @@ import { ServerConfigService } from "./server-config-service";
 import { SheetsService } from "./sheets-service";
 
 const app = new Hono<{ Bindings: Bindings }>();
+
+// CORS設定
+app.use(
+  "*",
+  cors({
+    origin: "https://kintai-discord.nasubi.dev",
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-signature-ed25519",
+      "x-signature-timestamp",
+    ],
+    credentials: true,
+  })
+);
 
 // Discord インタラクション処理
 app.post("/api/interactions", async (c) => {
