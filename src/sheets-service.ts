@@ -8,9 +8,10 @@ const KINTAI_COLUMNS = {
   WORK_HOURS: 2, // C: 差分（労働時間）
   START_TIME: 3, // D: 開始時刻
   END_TIME: 4, // E: 終了時刻
-  CHANNEL_ID: 5, // F: channel_id
-  DISCORD_ID: 6, // G: discord_id
-  UUID: 7, // H: uuid
+  WORK_DESCRIPTION: 5, // F: やったこと
+  CHANNEL_ID: 6, // G: channel_id
+  DISCORD_ID: 7, // H: discord_id
+  UUID: 8, // I: uuid
 } as const;
 
 // 統一されたヘッダー定義（新しいテーブル構造に対応）
@@ -20,6 +21,7 @@ const KINTAI_HEADERS = [
   "差分",
   "開始時刻",
   "終了時刻",
+  "やったこと",
   "channel_id",
   "discord_id",
   "uuid",
@@ -56,25 +58,32 @@ export class SheetsService {
     if (!response.ok) {
       // 401エラーの場合、トークンリフレッシュを試行
       if (response.status === 401 && guildId) {
-        console.log(`401エラーが発生しました。トークンをリフレッシュします (guildId: ${guildId})`);
-        
-        const { OAuthService } = await import('./oauth-service');
+        console.log(
+          `401エラーが発生しました。トークンをリフレッシュします (guildId: ${guildId})`
+        );
+
+        const { OAuthService } = await import("./oauth-service");
         const oauthService = new OAuthService(this.env);
         const refreshResult = await oauthService.refreshTokens(guildId);
-        
+
         if (refreshResult.success) {
           // 新しいトークンを取得してリトライ
-          const { ServerConfigService } = await import('./server-config-service');
+          const { ServerConfigService } = await import(
+            "./server-config-service"
+          );
           const serverConfigService = new ServerConfigService(this.env);
           const config = await serverConfigService.getServerConfig(guildId);
-          
+
           if (config?.access_token) {
             this.accessToken = config.access_token;
-            throw new Error('RETRY_WITH_NEW_TOKEN'); // リトライを指示
+            throw new Error("RETRY_WITH_NEW_TOKEN"); // リトライを指示
           }
         }
-        
-        console.error('トークンリフレッシュに失敗しました:', refreshResult.error);
+
+        console.error(
+          "トークンリフレッシュに失敗しました:",
+          refreshResult.error
+        );
       }
 
       const errorText = await response.text();
@@ -107,7 +116,10 @@ export class SheetsService {
   /**
    * 新しいスプレッドシートを作成
    */
-  async createSpreadsheet(title: string, guildId?: string): Promise<GoogleSheetsResponse> {
+  async createSpreadsheet(
+    title: string,
+    guildId?: string
+  ): Promise<GoogleSheetsResponse> {
     const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM format
 
     const data = await this.makeApiRequest(
@@ -157,9 +169,12 @@ export class SheetsService {
     sheetId: number = 0
   ): Promise<void> {
     // ヘッダー行を設定
-    await this.updateRange(spreadsheetId, `${sheetTitle}!A1:H1`, [
-      KINTAI_HEADERS,
-    ], guildId);
+    await this.updateRange(
+      spreadsheetId,
+      `${sheetTitle}!A1:H1`,
+      [KINTAI_HEADERS],
+      guildId
+    );
 
     // ヘッダー行のフォーマットを設定
     await this.formatHeaders(spreadsheetId, sheetId, guildId);
@@ -473,7 +488,12 @@ export class SheetsService {
         spreadsheetData.sheets?.[0]?.properties?.sheetId || 0;
 
       // 統一されたヘッダー行を追加
-      await this.setupKintaiHeaders(spreadsheetId, currentMonth, guildId, firstSheetId);
+      await this.setupKintaiHeaders(
+        spreadsheetId,
+        currentMonth,
+        guildId,
+        firstSheetId
+      );
 
       return {
         success: true,
@@ -540,16 +560,21 @@ export class SheetsService {
           "", // C: 差分（後で数式を設定）
           startTimeStr, // D: 開始時刻
           "", // E: 終了時刻（空のまま）
-          channelId, // F: channel_id
-          userId, // G: discord_id
-          recordId, // H: uuid
+          "", // F: やったこと（空のまま）
+          channelId, // G: channel_id
+          userId, // H: discord_id
+          recordId, // I: uuid
         ],
       ];
 
-      await this.appendRow(spreadsheetId, `${sheetName}!A:H`, values, guildId);
+      await this.appendRow(spreadsheetId, `${sheetName}!A:I`, values, guildId);
 
       // 追加された行の番号を特定して数式を設定
-      const allValues = await this.getRange(spreadsheetId, `${sheetName}!A:H`, guildId);
+      const allValues = await this.getRange(
+        spreadsheetId,
+        `${sheetName}!A:I`,
+        guildId
+      );
       let targetRowIndex = -1;
 
       for (let i = 1; i < allValues.length; i++) {
@@ -602,6 +627,7 @@ export class SheetsService {
     userId: string,
     endTime: Date,
     recordId: string,
+    workDescription: string,
     guildId?: string
   ): Promise<{ success: boolean; workHours?: string; error?: string }> {
     try {
@@ -612,7 +638,7 @@ export class SheetsService {
       const sheetName = currentMonth;
 
       // 該当する開始記録を検索
-      const range = `${sheetName}!A:H`;
+      const range = `${sheetName}!A:I`;
       const values = await this.getRange(spreadsheetId, range, guildId);
 
       let targetRowIndex = -1;
@@ -642,11 +668,11 @@ export class SheetsService {
       // 終了時刻フォーマット
       const endTimeStr = this.formatDateTimeToJST(endTime);
 
-      // 終了時刻のみを更新（差分は数式で自動計算される）
+      // 終了時刻とやったことを同時に更新
       await this.updateRange(
         spreadsheetId,
-        `${sheetName}!E${targetRowIndex}`, // 終了時刻のみ
-        [[endTimeStr]],
+        `${sheetName}!E${targetRowIndex}:F${targetRowIndex}`, // 終了時刻とやったこと
+        [[endTimeStr, workDescription]],
         guildId
       );
 
@@ -699,9 +725,19 @@ export class SheetsService {
 
       return await this.handleApiResponse(response, operation, guildId);
     } catch (error) {
-      if (error instanceof Error && error.message === 'RETRY_WITH_NEW_TOKEN' && retryCount < 1) {
-        console.log('新しいトークンでリトライします');
-        return this.makeApiRequest(url, options, operation, guildId, retryCount + 1);
+      if (
+        error instanceof Error &&
+        error.message === "RETRY_WITH_NEW_TOKEN" &&
+        retryCount < 1
+      ) {
+        console.log("新しいトークンでリトライします");
+        return this.makeApiRequest(
+          url,
+          options,
+          operation,
+          guildId,
+          retryCount + 1
+        );
       }
       throw error;
     }
@@ -835,7 +871,12 @@ export class SheetsService {
     );
 
     // 統一されたヘッダー行を追加
-    await this.appendRow(spreadsheetId, `${sheetName}!A1:H1`, [KINTAI_HEADERS], guildId);
+    await this.appendRow(
+      spreadsheetId,
+      `${sheetName}!A1:H1`,
+      [KINTAI_HEADERS],
+      guildId
+    );
   }
 
   /**
@@ -889,7 +930,7 @@ export class SheetsService {
       }
 
       // 該当ユーザーの未完了記録を検索
-      const range = `${sheetName}!A:H`;
+      const range = `${sheetName}!A:I`;
       const values = await this.getRange(spreadsheetId, range, guildId);
 
       for (let i = 1; i < values.length; i++) {
@@ -976,7 +1017,7 @@ export class SheetsService {
       }
 
       // 該当ユーザーの未完了記録を検索
-      const range = `${sheetName}!A:H`;
+      const range = `${sheetName}!A:I`;
       const values = await this.getRange(spreadsheetId, range, guildId);
 
       for (let i = 1; i < values.length; i++) {

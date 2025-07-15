@@ -19,6 +19,7 @@ export interface GASRequest {
   projectName: string;
   timestamp: string;
   customTime?: string; // 追加：カスタム時刻（ISO文字列）
+  workDescription?: string; // 追加：やったことの記録
 }
 
 export interface GASResponse {

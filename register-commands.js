@@ -47,6 +47,12 @@ async function registerCommands() {
       description: "勤務を終了します",
       options: [
         {
+          name: "todo",
+          description: "今日やったことを記録（必須）",
+          type: 3, // STRING
+          required: true,
+        },
+        {
           name: "time",
           description: "終了時刻を指定 (例: 18:00, 1800)",
           type: 3, // STRING
