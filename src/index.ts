@@ -15,6 +15,8 @@ import {
   isFutureTime,
   formatDateToJST,
   parseDateTimeFromJST,
+  parseTimeStringWithDate,
+  parseDateString,
 } from "./utils";
 import { DiscordApiService } from "./discord-api-service";
 import { OAuthService } from "./oauth-service";
@@ -304,12 +306,18 @@ async function handleSlashCommandDeferred(
   const channelId = interaction.channel_id;
   const token = interaction.token;
 
-  // コマンドオプションから時刻を取得
+  // コマンドオプションから時刻と日付を取得
   let customTimeString: string | undefined;
+  let customDateString: string | undefined;
   if ("options" in data && data.options) {
     const timeOpt = data.options.find((opt: any) => opt.name === "time");
     if (timeOpt && "value" in timeOpt) {
       customTimeString = timeOpt.value as string;
+    }
+
+    const dayOpt = data.options.find((opt: any) => opt.name === "day");
+    if (dayOpt && "value" in dayOpt) {
+      customDateString = dayOpt.value as string;
     }
   }
 
@@ -338,7 +346,9 @@ async function handleSlashCommandDeferred(
           interaction,
           discordApiService,
           token,
-          customTimeString
+          customTimeString,
+          customDateString,
+          3 // maxRetries
         );
         break;
       case "end":
@@ -419,6 +429,7 @@ async function handleStartCommandWithRetry(
   discordApiService: DiscordApiService,
   token: string,
   customTimeString?: string,
+  customDateString?: string,
   maxRetries: number = 3
 ): Promise<void> {
   const userId = interaction.member?.user?.id || interaction.user?.id!;
@@ -437,35 +448,52 @@ async function handleStartCommandWithRetry(
     try {
       console.log(`Start command attempt ${attempt}/${maxRetries}`);
 
-      // 時刻処理
+      // 時刻・日付処理（統一されたJST処理）
       let startTime: Date;
       let timeMessage = "";
 
-      if (customTimeString) {
-        // カスタム時刻をパース
-        const parsedTime = parseTimeStringToJST(customTimeString);
+      // 新しい統一された日時パース関数を使用
+      const parsedDateTime = parseTimeStringWithDate(
+        customTimeString,
+        customDateString
+      );
 
-        if (!parsedTime) {
+      if (customTimeString || customDateString) {
+        if (!parsedDateTime) {
           await discordApiService.deleteOriginalResponse(
             c.env.DISCORD_APPLICATION_ID,
             token
           );
 
+          let errorMessage = "❌ 日時形式が正しくありません。\n";
+          if (customTimeString) {
+            errorMessage +=
+              "**時刻の使用可能な形式:**\n" +
+              "• `09:00` (HH:MM形式)\n" +
+              "• `0900` (HHMM形式)\n" +
+              "• `900` (HMM形式)\n";
+          }
+          if (customDateString) {
+            errorMessage +=
+              "**日付の使用可能な形式:**\n" +
+              "• `2023-03-15` (YYYY-MM-DD形式)\n" +
+              "• `20230315` (YYYYMMDD形式)\n" +
+              "• `today` (今日)\n" +
+              "• `yesterday` (昨日)\n" +
+              "• `0` (今日), `-1` (昨日), `1` (明日) など";
+          }
+
           await discordApiService.createFollowupMessage(
             c.env.DISCORD_APPLICATION_ID,
             token,
-            "❌ 時刻形式が正しくありません。\n" +
-              "**使用可能な形式:**\n" +
-              "• `09:00` (HH:MM形式)\n" +
-              "• `0900` (HHMM形式)\n" +
-              "• `900` (HMM形式)",
+            errorMessage,
             true // ephemeral
           );
           return;
         }
 
         // 未来時刻チェック
-        if (isFutureTime(parsedTime)) {
+        if (isFutureTime(parsedDateTime)) {
           await discordApiService.deleteOriginalResponse(
             c.env.DISCORD_APPLICATION_ID,
             token
@@ -475,15 +503,18 @@ async function handleStartCommandWithRetry(
             c.env.DISCORD_APPLICATION_ID,
             token,
             "❌ 現在時刻より未来の時刻は指定できません。\n" +
-              `指定時刻: ${formatDateToJST(parsedTime)}\n` +
+              `指定時刻: ${formatDateToJST(parsedDateTime)}\n` +
               `現在時刻: ${formatDateToJST(new Date())}`,
             true // ephemeral
           );
           return;
         }
 
-        startTime = parsedTime;
-        timeMessage = ` (開始時刻: ${formatDateToJST(startTime)})`;
+        startTime = parsedDateTime;
+        const dateStr = customDateString
+          ? formatDateToJST(startTime, true)
+          : formatDateToJST(startTime);
+        timeMessage = ` (開始時刻: ${dateStr})`;
       } else {
         startTime = new Date();
       }
