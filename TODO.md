@@ -1,4 +1,6 @@
-- [] 公開Workersの名前をkintai-discord-v2.nasubi.devに変更
-- [] GoogleのOAuthの設定をkintai-discord-v2.nasubi.devに変更
-- [] DiscordのOAuthの設定をkintai-discord-v2.nasubi.devに変更
-- [] Googleに申請してなんていうかわからないページを作成
+- `/start`の開始日指示ができる機能の拡張
+  - 任意で開始日を指定
+  - dayだけの指定の場合はtimeは現在時刻を使用
+  - [x] 例: `/start time:1000 day:2023-03-15`で2023年3月15日の10時からの開始 YYYY-MM-DDの形式で日付を指定する(YYYYMMDDでも可)
+  - [x] 例外として day:today や day:yesterdayを指定することもできる
+  - [x] day:<number> で指定した場合は、今日からの相対日付として解釈する
