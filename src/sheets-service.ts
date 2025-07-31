@@ -561,13 +561,13 @@ export class SheetsService {
       }
 
       if (targetRowIndex > 0) {
-        // 差分の数式を設定
+        // 差分の数式を設定（日付をまたぐ場合も考慮）
         await this.updateRange(
           spreadsheetId,
           `${sheetName}!C${targetRowIndex}`,
           [
             [
-              `=IF(E${targetRowIndex}="","",HOUR(E${targetRowIndex}-D${targetRowIndex})&"時間"&MINUTE(E${targetRowIndex}-D${targetRowIndex})&"分")`,
+              `=IF(E${targetRowIndex}="","",IF((E${targetRowIndex}-D${targetRowIndex})<0,"エラー",INT((E${targetRowIndex}-D${targetRowIndex})*24)&"時間"&INT(MOD((E${targetRowIndex}-D${targetRowIndex})*24*60,60))&"分"))`,
             ],
           ]
         );
@@ -762,8 +762,10 @@ export class SheetsService {
         return "エラー";
       }
 
-      const hours = Math.floor(diffMs / (1000 * 60 * 60));
-      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      // 総分数を計算
+      const totalMinutes = Math.floor(diffMs / (1000 * 60));
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
 
       return `${hours}時間${minutes}分`;
     } catch (error) {
@@ -777,23 +779,22 @@ export class SheetsService {
    */
   private calculateWorkHours(startTimeStr: string, endTimeStr: string): string {
     try {
-      const today = new Date().toDateString();
-      const startTime = new Date(`${today} ${startTimeStr}`);
-      const endTime = new Date(`${today} ${endTimeStr}`);
+      // 日付をまたぐ可能性を考慮した時刻計算
+      const startTime = new Date(`${startTimeStr}`);
+      const endTime = new Date(`${endTimeStr}`);
 
       const diffMs = endTime.getTime() - startTime.getTime();
-      const diffHours = diffMs / (1000 * 60 * 60);
 
-      if (diffHours < 0) {
+      if (diffMs < 0) {
         return "エラー";
       }
 
-      const hours = Math.floor(diffHours);
-      const minutes = Math.floor((diffHours - hours) * 60);
+      // 総分数を計算
+      const totalMinutes = Math.floor(diffMs / (1000 * 60));
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
 
-      return `${hours.toString().padStart(2, "0")}:${minutes
-        .toString()
-        .padStart(2, "0")}`;
+      return `${hours}時間${minutes}分`;
     } catch (error) {
       return "計算エラー";
     }
