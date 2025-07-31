@@ -357,7 +357,9 @@ async function handleSlashCommandDeferred(
           interaction,
           discordApiService,
           token,
-          customTimeString
+          customTimeString,
+          customDateString,
+          3 // maxRetries
         );
         break;
       case "init":
@@ -741,6 +743,7 @@ async function handleEndCommandWithRetry(
   discordApiService: DiscordApiService,
   token: string,
   customTimeString?: string,
+  customDateString?: string,
   maxRetries: number = 3
 ): Promise<void> {
   const userId = interaction.member?.user?.id || interaction.user?.id!;
@@ -758,35 +761,55 @@ async function handleEndCommandWithRetry(
     try {
       console.log(`End command attempt ${attempt}/${maxRetries}`);
 
-      // 時刻処理
+      // 時刻・日付処理（統一されたJST処理）
       let endTime: Date;
       let timeMessage = "";
 
-      if (customTimeString) {
-        // カスタム時刻をパース
-        const parsedTime = parseTimeStringToJST(customTimeString);
+      // 新しい統一された日時パース関数を使用
+      const parsedDateTime = parseTimeStringWithDate(
+        customTimeString,
+        customDateString
+      );
 
-        if (!parsedTime) {
+      if (customTimeString || customDateString) {
+        if (!parsedDateTime) {
           await discordApiService.deleteOriginalResponse(
             c.env.DISCORD_APPLICATION_ID,
             token
           );
 
+          let errorMessage = "❌ 日時形式が正しくありません。\n";
+          if (customTimeString) {
+            errorMessage +=
+              "**時刻の使用可能な形式:**\n" +
+              "• `18:00` (HH:MM形式)\n" +
+              "• `1800` (HHMM形式)\n" +
+              "• `600` (HMM形式)\n";
+          }
+          if (customDateString) {
+            errorMessage +=
+              "**日付の使用可能な形式:**\n" +
+              "• `2023-03-15` (YYYY-MM-DD形式)\n" +
+              "• `20230315` (YYYYMMDD形式)\n" +
+              "• `today` (今日)\n" +
+              "• `yesterday` (昨日)\n" +
+              "• `0` (今日), `-1` (昨日), `1` (明日) など";
+          }
+
           await discordApiService.createFollowupMessage(
             c.env.DISCORD_APPLICATION_ID,
             token,
-            "❌ 時刻形式が正しくありません。\n" +
-              "**使用可能な形式:**\n" +
-              "• `18:00` (HH:MM形式)\n" +
-              "• `1800` (HHMM形式)\n" +
-              "• `600` (HMM形式)",
+            errorMessage,
             true // ephemeral
           );
           return;
         }
 
-        endTime = parsedTime;
-        timeMessage = ` (終了時刻: ${formatDateToJST(endTime)})`;
+        endTime = parsedDateTime;
+        const dateStr = customDateString
+          ? formatDateToJST(endTime, true)
+          : formatDateToJST(endTime);
+        timeMessage = ` (終了時刻: ${dateStr})`;
       } else {
         endTime = new Date();
       }
