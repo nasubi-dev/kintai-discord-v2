@@ -567,7 +567,7 @@ export class SheetsService {
           `${sheetName}!C${targetRowIndex}`,
           [
             [
-              `=IF(E${targetRowIndex}="","",HOUR(E${targetRowIndex}-D${targetRowIndex})&"時間"&MINUTE(E${targetRowIndex}-D${targetRowIndex})&"分"&SECOND(E${targetRowIndex}-D${targetRowIndex})&"秒")`,
+              `=IF(E${targetRowIndex}="","",HOUR(E${targetRowIndex}-D${targetRowIndex})&"時間"&MINUTE(E${targetRowIndex}-D${targetRowIndex})&"分")`,
             ],
           ]
         );
@@ -731,7 +731,6 @@ export class SheetsService {
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
-      second: "2-digit",
       hour12: false,
     });
   }
@@ -746,14 +745,14 @@ export class SheetsService {
     try {
       const startTime = new Date(
         startTimeStr.replace(
-          /(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})/,
-          "$1-$2-$3T$4:$5:$6+09:00"
+          /(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})/,
+          "$1-$2-$3T$4:$5:00+09:00"
         )
       );
       const endTime = new Date(
         endTimeStr.replace(
-          /(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})/,
-          "$1-$2-$3T$4:$5:$6+09:00"
+          /(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})/,
+          "$1-$2-$3T$4:$5:00+09:00"
         )
       );
 
@@ -765,9 +764,8 @@ export class SheetsService {
 
       const hours = Math.floor(diffMs / (1000 * 60 * 60));
       const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
 
-      return `${hours}時間${minutes}分${seconds}秒`;
+      return `${hours}時間${minutes}分`;
     } catch (error) {
       console.error("Work hours calculation error:", error);
       return "計算エラー";
