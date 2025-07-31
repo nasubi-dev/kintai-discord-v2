@@ -5,18 +5,20 @@ import { parseDateTimeFromJST } from "./utils";
 const KINTAI_COLUMNS = {
   PROJECT: 0, // A: プロジェクト名（チャンネル名）
   USERNAME: 1, // B: ユーザー名
-  WORK_HOURS: 2, // C: 差分（労働時間）
-  START_TIME: 3, // D: 開始時刻
-  END_TIME: 4, // E: 終了時刻
-  CHANNEL_ID: 5, // F: channel_id
-  DISCORD_ID: 6, // G: discord_id
-  UUID: 7, // H: uuid
+  TODO: 2, // C: やったこと（新規追加）
+  WORK_HOURS: 3, // D: 差分（労働時間）
+  START_TIME: 4, // E: 開始時刻
+  END_TIME: 5, // F: 終了時刻
+  CHANNEL_ID: 6, // G: channel_id
+  DISCORD_ID: 7, // H: discord_id
+  UUID: 8, // I: uuid
 } as const;
 
 // 統一されたヘッダー定義（新しいテーブル構造に対応）
 const KINTAI_HEADERS = [
   "プロジェクト名",
   "ユーザー名",
+  "やったこと", // 新規追加
   "差分",
   "開始時刻",
   "終了時刻",
@@ -156,8 +158,8 @@ export class SheetsService {
     guildId?: string,
     sheetId: number = 0
   ): Promise<void> {
-    // ヘッダー行を設定
-    await this.updateRange(spreadsheetId, `${sheetTitle}!A1:H1`, [
+    // ヘッダー行を設定（9列すべて）
+    await this.updateRange(spreadsheetId, `${sheetTitle}!A1:I1`, [
       KINTAI_HEADERS,
     ], guildId);
 
@@ -239,8 +241,22 @@ export class SheetsService {
           range: {
             sheetId: sheetId,
             dimension: "COLUMNS",
-            startIndex: 2, // C列: 差分
+            startIndex: 2, // C列: やったこと
             endIndex: 3,
+          },
+          properties: {
+            pixelSize: 200,
+          },
+          fields: "pixelSize",
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: {
+            sheetId: sheetId,
+            dimension: "COLUMNS",
+            startIndex: 3, // D列: 差分
+            endIndex: 4,
           },
           properties: {
             pixelSize: 120,
@@ -253,21 +269,7 @@ export class SheetsService {
           range: {
             sheetId: sheetId,
             dimension: "COLUMNS",
-            startIndex: 3, // D列: 開始時刻
-            endIndex: 4,
-          },
-          properties: {
-            pixelSize: 180,
-          },
-          fields: "pixelSize",
-        },
-      },
-      {
-        updateDimensionProperties: {
-          range: {
-            sheetId: sheetId,
-            dimension: "COLUMNS",
-            startIndex: 4, // E列: 終了時刻
+            startIndex: 4, // E列: 開始時刻
             endIndex: 5,
           },
           properties: {
@@ -281,11 +283,11 @@ export class SheetsService {
           range: {
             sheetId: sheetId,
             dimension: "COLUMNS",
-            startIndex: 5, // F列: channel_id
+            startIndex: 5, // F列: 終了時刻
             endIndex: 6,
           },
           properties: {
-            pixelSize: 150,
+            pixelSize: 180,
           },
           fields: "pixelSize",
         },
@@ -295,7 +297,7 @@ export class SheetsService {
           range: {
             sheetId: sheetId,
             dimension: "COLUMNS",
-            startIndex: 6, // G列: discord_id
+            startIndex: 6, // G列: channel_id
             endIndex: 7,
           },
           properties: {
@@ -309,8 +311,22 @@ export class SheetsService {
           range: {
             sheetId: sheetId,
             dimension: "COLUMNS",
-            startIndex: 7, // H列: uuid
+            startIndex: 7, // H列: discord_id
             endIndex: 8,
+          },
+          properties: {
+            pixelSize: 150,
+          },
+          fields: "pixelSize",
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: {
+            sheetId: sheetId,
+            dimension: "COLUMNS",
+            startIndex: 8, // I列: uuid
+            endIndex: 9,
           },
           properties: {
             pixelSize: 250,
@@ -544,19 +560,20 @@ export class SheetsService {
         [
           projectName, // A: プロジェクト名（チャンネル名）
           username, // B: ユーザー名
-          "", // C: 差分（後で数式を設定）
-          startTimeStr, // D: 開始時刻
-          "", // E: 終了時刻（空のまま）
-          channelId, // F: channel_id
-          userId, // G: discord_id
-          recordId, // H: uuid
+          "", // C: やったこと（開始時は空）
+          "", // D: 差分（後で数式を設定）
+          startTimeStr, // E: 開始時刻
+          "", // F: 終了時刻（空のまま）
+          channelId, // G: channel_id
+          userId, // H: discord_id
+          recordId, // I: uuid
         ],
       ];
 
-      await this.appendRow(spreadsheetId, `${sheetName}!A:H`, values, guildId);
+      await this.appendRow(spreadsheetId, `${sheetName}!A:I`, values, guildId);
 
       // 追加された行の番号を特定して数式を設定
-      const allValues = await this.getRange(spreadsheetId, `${sheetName}!A:H`, guildId);
+      const allValues = await this.getRange(spreadsheetId, `${sheetName}!A:I`, guildId);
       let targetRowIndex = -1;
 
       for (let i = 1; i < allValues.length; i++) {
@@ -571,10 +588,10 @@ export class SheetsService {
         // 差分の数式を設定（日付をまたぐ場合も考慮）
         await this.updateRange(
           spreadsheetId,
-          `${sheetName}!C${targetRowIndex}`,
+          `${sheetName}!D${targetRowIndex}`,
           [
             [
-              `=IF(E${targetRowIndex}="","",IF((E${targetRowIndex}-D${targetRowIndex})<0,"エラー",INT((E${targetRowIndex}-D${targetRowIndex})*24)&"時間"&INT(MOD((E${targetRowIndex}-D${targetRowIndex})*24*60,60))&"分"))`,
+              `=IF(F${targetRowIndex}="","",IF((F${targetRowIndex}-E${targetRowIndex})<0,"エラー",INT((F${targetRowIndex}-E${targetRowIndex})*24)&"時間"&INT(MOD((F${targetRowIndex}-E${targetRowIndex})*24*60,60))&"分"))`,
             ],
           ]
         );
@@ -609,6 +626,7 @@ export class SheetsService {
     userId: string,
     endTime: Date,
     recordId: string,
+    todo: string, // 必須パラメータに変更
     guildId?: string
   ): Promise<{ success: boolean; workHours?: string; error?: string }> {
     try {
@@ -619,7 +637,7 @@ export class SheetsService {
       const sheetName = currentMonth;
 
       // 該当する開始記録を検索
-      const range = `${sheetName}!A:H`;
+      const range = `${sheetName}!A:I`;
       const values = await this.getRange(spreadsheetId, range, guildId);
 
       let targetRowIndex = -1;
@@ -657,18 +675,26 @@ export class SheetsService {
         startTimeFromSheet: startTimeStr
       });
 
-      // 終了時刻のみを更新（差分は数式で自動計算される）
+      // やったことを更新（C列のみ）
       await this.updateRange(
         spreadsheetId,
-        `${sheetName}!E${targetRowIndex}`, // 終了時刻のみ
-        [[endTimeStr]],
+        `${sheetName}!C${targetRowIndex}`, // C列（やったこと）のみ
+        [[todo]], // やったこと
+        guildId
+      );
+
+      // 終了時刻を更新（F列のみ）
+      await this.updateRange(
+        spreadsheetId,
+        `${sheetName}!F${targetRowIndex}`, // F列（終了時刻）のみ
+        [[endTimeStr]], // 終了時刻
         guildId
       );
 
       // 差分値を取得（数式で計算された結果）
       const workHoursResult = await this.getRange(
         spreadsheetId,
-        `${sheetName}!C${targetRowIndex}`,
+        `${sheetName}!D${targetRowIndex}`,
         guildId
       );
       const workHours = workHoursResult[0]?.[0] || "計算中";
@@ -827,7 +853,7 @@ export class SheetsService {
     guildId?: string
   ): Promise<void> {
     // シートを追加
-    await this.makeApiRequest(
+    const addSheetResponse = await this.makeApiRequest(
       `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
       {
         method: "POST",
@@ -851,8 +877,11 @@ export class SheetsService {
       guildId
     );
 
-    // 統一されたヘッダー行を追加
-    await this.appendRow(spreadsheetId, `${sheetName}!A1:H1`, [KINTAI_HEADERS], guildId);
+    // 新しく作成されたシートのIDを取得
+    const newSheetId = addSheetResponse.replies?.[0]?.addSheet?.properties?.sheetId || 0;
+
+    // 統一されたヘッダー行とフォーマットを設定
+    await this.setupKintaiHeaders(spreadsheetId, sheetName, guildId, newSheetId);
   }
 
   /**
@@ -906,7 +935,7 @@ export class SheetsService {
       }
 
       // 該当ユーザーの未完了記録を検索
-      const range = `${sheetName}!A:H`;
+      const range = `${sheetName}!A:I`;
       const values = await this.getRange(spreadsheetId, range, guildId);
 
       for (let i = 1; i < values.length; i++) {
@@ -993,7 +1022,7 @@ export class SheetsService {
       }
 
       // 該当ユーザーの未完了記録を検索
-      const range = `${sheetName}!A:H`;
+      const range = `${sheetName}!A:I`;
       const values = await this.getRange(spreadsheetId, range, guildId);
 
       for (let i = 1; i < values.length; i++) {

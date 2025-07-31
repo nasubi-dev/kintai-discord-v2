@@ -306,9 +306,10 @@ async function handleSlashCommandDeferred(
   const channelId = interaction.channel_id;
   const token = interaction.token;
 
-  // コマンドオプションから時刻と日付を取得
+  // コマンドオプションから時刻、日付、TODOを取得
   let customTimeString: string | undefined;
   let customDateString: string | undefined;
+  let todoString: string | undefined; // 新規追加
   if ("options" in data && data.options) {
     const timeOpt = data.options.find((opt: any) => opt.name === "time");
     if (timeOpt && "value" in timeOpt) {
@@ -318,6 +319,12 @@ async function handleSlashCommandDeferred(
     const dayOpt = data.options.find((opt: any) => opt.name === "day");
     if (dayOpt && "value" in dayOpt) {
       customDateString = dayOpt.value as string;
+    }
+
+    // TODOオプションを取得
+    const todoOpt = data.options.find((opt: any) => opt.name === "todo");
+    if (todoOpt && "value" in todoOpt) {
+      todoString = todoOpt.value as string;
     }
   }
 
@@ -352,11 +359,27 @@ async function handleSlashCommandDeferred(
         );
         break;
       case "end":
+        // TODOが必須なので、存在しない場合はエラー
+        if (!todoString) {
+          await discordApiService.deleteOriginalResponse(
+            c.env.DISCORD_APPLICATION_ID,
+            token
+          );
+          await discordApiService.createFollowupMessage(
+            c.env.DISCORD_APPLICATION_ID,
+            token,
+            "❌ `todo` パラメータは必須です。やったことを記録してください。\n\n例: `/end todo:コーディング`",
+            true // ephemeral
+          );
+          return;
+        }
+
         await handleEndCommandWithRetry(
           c,
           interaction,
           discordApiService,
           token,
+          todoString, // 必須パラメータを最初に
           customTimeString,
           customDateString,
           3 // maxRetries
@@ -742,6 +765,7 @@ async function handleEndCommandWithRetry(
   interaction: APIInteraction,
   discordApiService: DiscordApiService,
   token: string,
+  todoString: string, // 必須パラメータ
   customTimeString?: string,
   customDateString?: string,
   maxRetries: number = 3
@@ -937,6 +961,7 @@ async function handleEndCommandWithRetry(
         userId,
         endTime,
         activeWorkRecord.recordId,
+        todoString, // TODOを渡す
         guildId
       );
 
@@ -954,13 +979,13 @@ async function handleEndCommandWithRetry(
           workDuration = endResult.workHours || `${hours}時間${minutes}分`;
         }
 
-        // 成功時はシンプルなメッセージ（プロジェクト名と労働時間のみ）
+        // 成功メッセージにTODOを含める（必須なので常に表示）
         await discordApiService.editDeferredResponse(
           c.env.DISCORD_APPLICATION_ID,
           token,
           `✅ 勤務を終了しました！お疲れ様でした！${timeMessage}\n\n📍 **プロジェクト**: ${
             activeWorkRecord.projectName || "不明"
-          }\n⏰ **労働時間**: ${workDuration}`
+          }\n⏰ **労働時間**: ${workDuration}\n📝 **やったこと**: ${todoString}`
         );
         return;
       } else {

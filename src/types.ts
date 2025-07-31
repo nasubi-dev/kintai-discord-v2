@@ -36,6 +36,7 @@ export interface AttendanceRecord {
   startTime: string;
   endTime: string;
   uuid: string;
+  todo: string; // 必須フィールドに変更
 }
 
 // KVストレージ用の型定義
