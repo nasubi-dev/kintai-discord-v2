@@ -362,26 +362,36 @@ export function formatDateToJST(
  */
 export function parseDateTimeFromJST(jstDateTimeString: string): Date | null {
   try {
-    // 日本語ロケール形式の例: "2025/06/28 14:30:00"
-    const match = jstDateTimeString.match(
+    // 分まで（秒なし）の形式: "2025/07/31 17:32"
+    const matchMinutes = jstDateTimeString.match(
+      /^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{1,2})$/
+    );
+    
+    // 秒ありの形式: "2025/07/31 17:32:00" (後方互換性のため)
+    const matchSeconds = jstDateTimeString.match(
       /^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})$/
     );
 
-    if (!match) {
+    let year: string, month: string, day: string, hours: string, minutes: string, seconds: string = "0";
+
+    if (matchMinutes) {
+      [, year, month, day, hours, minutes] = matchMinutes;
+    } else if (matchSeconds) {
+      [, year, month, day, hours, minutes, seconds] = matchSeconds;
+    } else {
       // フォールバック：標準的なDate.parseを試行
       const parsed = new Date(jstDateTimeString);
       if (!isNaN(parsed.getTime())) {
-        // JSTとして解釈されているか確認し、UTCに調整
-        // 既にUTCとして正しく解釈されている場合はそのまま返す
         return parsed;
       }
       return null;
     }
 
-    const [, year, month, day, hours, minutes, seconds] = match;
-
-    // JST時刻として解釈してUTCに変換
-    const jstDate = new Date(
+    // JST時刻として正確に解釈してUTCに変換
+    const jstOffset = 9 * 60; // JST = UTC+9 (分単位)
+    
+    // ローカル時刻として作成（JST想定）
+    const localDate = new Date(
       parseInt(year),
       parseInt(month) - 1, // 月は0ベース
       parseInt(day),
@@ -390,8 +400,9 @@ export function parseDateTimeFromJST(jstDateTimeString: string): Date | null {
       parseInt(seconds)
     );
 
-    // JSTからUTCに変換（-9時間）
-    const utcDate = new Date(jstDate.getTime() - 9 * 60 * 60 * 1000);
+    // JSTからUTCに変換
+    const utcTime = localDate.getTime() - (jstOffset * 60000);
+    const utcDate = new Date(utcTime);
 
     return utcDate;
   } catch (error) {

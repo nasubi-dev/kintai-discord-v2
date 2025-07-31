@@ -528,6 +528,13 @@ export class SheetsService {
 
       // 日時フォーマット（完全な日時形式）
       const startTimeStr = this.formatDateTimeToJST(startTime);
+      
+      // デバッグログ
+      console.log('記録開始時刻:', {
+        original: startTime.toISOString(),
+        formatted: startTimeStr,
+        timezone: 'JST'
+      });
 
       // 記録ID生成（UUID形式）
       const recordId = crypto.randomUUID();
@@ -641,6 +648,14 @@ export class SheetsService {
 
       // 終了時刻フォーマット
       const endTimeStr = this.formatDateTimeToJST(endTime);
+      
+      // デバッグログ
+      console.log('記録終了時刻:', {
+        original: endTime.toISOString(),
+        formatted: endTimeStr,
+        timezone: 'JST',
+        startTimeFromSheet: startTimeStr
+      });
 
       // 終了時刻のみを更新（差分は数式で自動計算される）
       await this.updateRange(
@@ -724,15 +739,18 @@ export class SheetsService {
   }
 
   private formatDateTimeToJST(date: Date): string {
-    return date.toLocaleString("ja-JP", {
-      timeZone: "Asia/Tokyo",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
+    // 日本時間に変換してフォーマット
+    const jstOffset = 9 * 60; // JST = UTC+9
+    const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
+    const jstTime = new Date(utc + (jstOffset * 60000));
+    
+    const year = jstTime.getFullYear();
+    const month = String(jstTime.getMonth() + 1).padStart(2, '0');
+    const day = String(jstTime.getDate()).padStart(2, '0');
+    const hour = String(jstTime.getHours()).padStart(2, '0');
+    const minute = String(jstTime.getMinutes()).padStart(2, '0');
+    
+    return `${year}/${month}/${day} ${hour}:${minute}`;
   }
 
   /**
