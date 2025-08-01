@@ -147,51 +147,33 @@ app.get("/api/stats", async (c) => {
   try {
     console.log("Getting bot statistics...");
 
-    // Discord APIからボットが参加しているサーバー一覧を取得
-    const response = await fetch(
-      "https://discord.com/api/v10/users/@me/guilds",
-      {
-        headers: {
-          Authorization: `Bot ${c.env.DISCORD_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    const discordApiService = new DiscordApiService(c.env.DISCORD_TOKEN);
+    const stats = await discordApiService.getBotStats();
 
-    if (!response.ok) {
-      console.error(
-        `Discord API error: ${response.status} - ${await response.text()}`
-      );
-      return c.json(
-        {
-          success: false,
-          error: "Discord APIからサーバー情報を取得できませんでした",
-        },
-        500
-      );
-    }
-
-    const guilds = (await response.json()) as DiscordGuild[];
-    const serverCount = guilds.length;
-
-    console.log(`Bot is in ${serverCount} servers`);
-
-    const stats: BotStats = {
-      serverCount,
+    const botStats: BotStats = {
+      serverCount: stats.guild_count,
       timestamp: new Date().toISOString(),
       version: "2.0",
     };
 
+    console.log(`Bot is in ${stats.guild_count} servers`);
+
     return c.json({
       success: true,
-      data: stats,
+      data: botStats,
     });
   } catch (error) {
     console.error("Error getting bot statistics:", error);
+
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : "統計情報の取得中にエラーが発生しました";
+
     return c.json(
       {
         success: false,
-        error: "統計情報の取得中にエラーが発生しました",
+        error: errorMessage,
       },
       500
     );
