@@ -120,4 +120,34 @@ export class DiscordApiService {
       );
     }
   }
+
+  /**
+   * Bot統計情報を取得（参加サーバー数のみ）
+   */
+  async getBotStats(): Promise<{ guild_count: number }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/users/@me/guilds`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bot ${this.botToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Discord API error: ${response.status} - ${await response.text()}`
+        );
+      }
+
+      const guilds = await response.json();
+      
+      return {
+        guild_count: Array.isArray(guilds) ? guilds.length : 0,
+      };
+    } catch (error) {
+      console.error("Failed to get bot stats:", error);
+      throw new Error("Bot統計情報の取得に失敗しました");
+    }
+  }
 }

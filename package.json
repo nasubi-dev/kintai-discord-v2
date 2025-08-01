@@ -11,7 +11,8 @@
     "setup": "cp .env.example .env && cp .env .dev.vars && cp wrangler.jsonc.example wrangler.jsonc",
     "secrets:setup": "bun run scripts/setup-secrets.js",
     "kv:setup": "bash scripts/setup-kv.sh",
-    "list-guilds": "bun run scripts/list-guilds.js"
+    "list-guilds": "bun run scripts/list-guilds.js",
+    "guild-count": "bun run scripts/guild-count.js"
   },
   "dependencies": {
     "@types/node": "^24.0.3",
