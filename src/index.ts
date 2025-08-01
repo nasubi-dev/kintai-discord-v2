@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { Bindings, DiscordGuild, BotStats, DetailedBotStats } from "./types";
 
 // Discord API型定義 - 型安全性とIntelliSense向上のため使用
@@ -24,6 +25,48 @@ import { ServerConfigService } from "./server-config-service";
 import { SheetsService } from "./sheets-service";
 
 const app = new Hono<{ Bindings: Bindings }>();
+
+// CORS設定 - APIエンドポイント用
+app.use(
+  "/api/*",
+  cors({
+    origin: (origin) => {
+      // 許可するオリジンリスト
+      const allowedOrigins = [
+        "https://kintai-discord.nasubi.dev",
+        "https://nasubi.dev",
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "http://localhost:5173", // Vite開発サーバー
+        "http://localhost:3001", // Next.js開発サーバー
+      ];
+
+      // オリジンが未設定（同一オリジン）または許可リストに含まれている場合は許可
+      if (!origin || allowedOrigins.includes(origin)) {
+        return origin || null;
+      }
+
+      // 開発環境では localhost のポートバリエーションを許可
+      if (origin && /^http:\/\/localhost:\d+$/.test(origin)) {
+        return origin;
+      }
+
+      return null; // 許可しない場合はnullを返す
+    },
+    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "User-Agent", // User-Agentヘッダーを追加
+      "Accept",
+      "Accept-Language",
+      "Accept-Encoding",
+    ],
+    credentials: false, // 公開APIなので認証情報は不要
+    maxAge: 86400, // 24時間キャッシュ
+  })
+);
 
 // Discord インタラクション処理
 app.post("/api/interactions", async (c) => {
