@@ -64,6 +64,12 @@ async function registerCommands() {
           type: 3, // STRING
           required: false,
         },
+        {
+          name: "day",
+          description: "終了日を指定 (例: 2023-03-15, 20230315, today, yesterday, -1)",
+          type: 3, // STRING
+          required: false,
+        },
       ],
     },
     {
