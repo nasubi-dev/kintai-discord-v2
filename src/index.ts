@@ -1608,7 +1608,29 @@ app.get("/init-guide", async (c) => {
         </div>
 
         <div class="step">
-            <h3>Step 2: Google Sheets APIの有効化</h3>
+            <h3>Step 2: OAuth同意画面の設定</h3>
+            <ol>
+                <li>「APIとサービス」→「OAuth同意画面」</li>
+                <li>User Type: 「外部」を選択して「作成」をクリック</li>
+                <li>アプリ情報を入力：
+                    <ul>
+                        <li>アプリ名: 「勤怠管理Bot」わかりやすい名前をつけてください</li>
+                        <li>ユーザーサポートメール: あなたのGmailアドレス</li>
+                        <li>デベロッパーの連絡先情報: あなたのGmailアドレス</li>
+                    </ul>
+                </li>
+                <li>「保存して次へ」をクリック</li>
+                <li>スコープ画面: 何も追加せず「保存して次へ」をクリック</li>
+                <li>テストユーザー画面: あなたのGmailアドレスを追加して「保存して次へ」</li>
+                <li>概要画面: 「ダッシュボードに戻る」をクリック</li>
+            </ol>
+            <div class="warning">
+                <p><strong>注意:</strong> 初回設定時は「テスト」状態です。</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <h3>Step 3: Google Sheets APIの有効化</h3>
             <ol>
                 <li>左側メニューから「APIとサービス」→「ライブラリ」</li>
                 <li>「Google Sheets API」を検索</li>
@@ -1617,7 +1639,7 @@ app.get("/init-guide", async (c) => {
         </div>
 
         <div class="step">
-            <h3>Step 3: OAuth認証情報の作成</h3>
+            <h3>Step 4: OAuth認証情報の作成</h3>
             <ol>
                 <li>「APIとサービス」→「認証情報」</li>
                 <li>「認証情報を作成」→「OAuth クライアント ID」</li>
@@ -1634,7 +1656,7 @@ app.get("/init-guide", async (c) => {
         </div>
 
         <div class="step">
-            <h3>Step 4: 認証情報の入力</h3>
+            <h3>Step 5: 認証情報の入力</h3>
             <p>作成されたクライアント ID とクライアント シークレットを以下に入力してください：</p>
             
             <form id="oauth-form">
