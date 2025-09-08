@@ -155,3 +155,20 @@ export interface DetailedBotStats {
   timestamp: string;
   version: string;
 }
+
+// 統計機能の型定義
+export interface UserMonthlyStats {
+  success: boolean;
+  username?: string;
+  totalWorkTime?: string;
+  projectBreakdown?: { [projectName: string]: string };
+  error?: string;
+}
+
+export interface ProjectMonthlyStats {
+  success: boolean;
+  projectName?: string;
+  totalWorkTime?: string;
+  userBreakdown?: { [userId: string]: { username: string; workTime: string } };
+  error?: string;
+}

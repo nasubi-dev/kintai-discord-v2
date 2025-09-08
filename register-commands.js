@@ -41,7 +41,8 @@ async function registerCommands() {
         },
         {
           name: "day",
-          description: "開始日を指定 (例: 2023-03-15, 20230315, today, yesterday, -1)",
+          description:
+            "開始日を指定 (例: 2023-03-15, 20230315, today, yesterday, -1)",
           type: 3, // STRING
           required: false,
         },
@@ -66,7 +67,8 @@ async function registerCommands() {
         },
         {
           name: "day",
-          description: "終了日を指定 (例: 2023-03-15, 20230315, today, yesterday, -1)",
+          description:
+            "終了日を指定 (例: 2023-03-15, 20230315, today, yesterday, -1)",
           type: 3, // STRING
           required: false,
         },
@@ -86,6 +88,26 @@ async function registerCommands() {
       name: "reset",
       type: 1, // CHAT_INPUT
       description: "勤怠管理システムの設定をリセットします（管理者のみ）",
+    },
+    {
+      name: "status",
+      type: 1, // CHAT_INPUT
+      description: "今月の稼働時間統計を表示します",
+      options: [
+        {
+          name: "user",
+          description: "対象ユーザーを指定 (@ユーザー名)",
+          type: 6, // USER
+          required: false,
+        },
+        {
+          name: "project",
+          description:
+            "対象プロジェクトを指定 (チャンネル名またはall-projects)",
+          type: 3, // STRING
+          required: false,
+        },
+      ],
     },
   ];
 

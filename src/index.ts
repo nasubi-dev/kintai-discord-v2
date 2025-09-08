@@ -331,10 +331,12 @@ async function handleSlashCommandDeferred(
   const channelId = interaction.channel_id;
   const token = interaction.token;
 
-  // コマンドオプションから時刻、日付、TODOを取得
+  // コマンドオプションから時刻、日付、TODO、ユーザー、プロジェクトを取得
   let customTimeString: string | undefined;
   let customDateString: string | undefined;
   let todoString: string | undefined; // 新規追加
+  let targetUserId: string | undefined; // status用
+  let targetProject: string | undefined; // status用
   if ("options" in data && data.options) {
     const timeOpt = data.options.find((opt: any) => opt.name === "time");
     if (timeOpt && "value" in timeOpt) {
@@ -350,6 +352,17 @@ async function handleSlashCommandDeferred(
     const todoOpt = data.options.find((opt: any) => opt.name === "todo");
     if (todoOpt && "value" in todoOpt) {
       todoString = todoOpt.value as string;
+    }
+
+    // statusコマンド用のオプション
+    const userOpt = data.options.find((opt: any) => opt.name === "user");
+    if (userOpt && "value" in userOpt) {
+      targetUserId = userOpt.value as string;
+    }
+
+    const projectOpt = data.options.find((opt: any) => opt.name === "project");
+    if (projectOpt && "value" in projectOpt) {
+      targetProject = projectOpt.value as string;
     }
   }
 
@@ -418,6 +431,16 @@ async function handleSlashCommandDeferred(
         break;
       case "reset":
         await handleResetCommand(c, interaction, discordApiService, token);
+        break;
+      case "status":
+        await handleStatusStatsCommand(
+          c,
+          interaction,
+          discordApiService,
+          token,
+          targetUserId,
+          targetProject
+        );
         break;
       default:
         await discordApiService.deleteOriginalResponse(
@@ -1847,6 +1870,212 @@ function checkAdminPermissions(
 
   // 4. 最終的なフォールバック（開発・テスト用）
   return true; // 一時的に全てのユーザーを許可
+}
+
+/**
+ * 統計表示コマンドの処理
+ */
+async function handleStatusStatsCommand(
+  c: any,
+  interaction: APIInteraction,
+  discordApiService: DiscordApiService,
+  token: string,
+  targetUserId?: string,
+  targetProject?: string
+): Promise<void> {
+  const userId = interaction.member?.user?.id || interaction.user?.id!;
+  const guildId = interaction.guild_id!;
+  const username =
+    interaction.member?.user?.username ||
+    interaction.user?.username ||
+    "Unknown";
+
+  try {
+    // サーバー設定の確認
+    const serverConfigService = new ServerConfigService(c.env);
+    const config = await serverConfigService.getServerConfig(guildId);
+
+    if (!config) {
+      await discordApiService.deleteOriginalResponse(
+        c.env.DISCORD_APPLICATION_ID,
+        token
+      );
+      await discordApiService.createFollowupMessage(
+        c.env.DISCORD_APPLICATION_ID,
+        token,
+        "❌ 勤怠管理が設定されていません。`/init`で初期設定を行ってください。",
+        true // ephemeral
+      );
+      return;
+    }
+
+    const sheetsService = new SheetsService(c.env, config.access_token);
+
+    // パラメータに応じて適切な統計を取得
+    if (targetUserId) {
+      // 特定ユーザーの統計
+      await handleUserStats(
+        sheetsService,
+        discordApiService,
+        c.env.DISCORD_APPLICATION_ID,
+        token,
+        config.spreadsheet_id,
+        targetUserId,
+        guildId,
+        username
+      );
+    } else if (targetProject) {
+      // 特定プロジェクトの統計
+      await handleProjectStats(
+        sheetsService,
+        discordApiService,
+        c.env.DISCORD_APPLICATION_ID,
+        token,
+        config.spreadsheet_id,
+        targetProject,
+        guildId,
+        username
+      );
+    } else {
+      // 現在のユーザーの統計
+      await handleUserStats(
+        sheetsService,
+        discordApiService,
+        c.env.DISCORD_APPLICATION_ID,
+        token,
+        config.spreadsheet_id,
+        userId,
+        guildId,
+        username
+      );
+    }
+  } catch (error) {
+    console.error("Status stats command error:", error);
+
+    await discordApiService.deleteOriginalResponse(
+      c.env.DISCORD_APPLICATION_ID,
+      token
+    );
+
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : "統計の取得中にエラーが発生しました";
+    await discordApiService.createFollowupMessage(
+      c.env.DISCORD_APPLICATION_ID,
+      token,
+      `❌ ${errorMessage}`,
+      true // ephemeral
+    );
+  }
+}
+
+/**
+ * ユーザー統計の処理
+ */
+async function handleUserStats(
+  sheetsService: SheetsService,
+  discordApiService: DiscordApiService,
+  applicationId: string,
+  token: string,
+  spreadsheetId: string,
+  targetUserId: string,
+  guildId: string,
+  requestUsername: string
+): Promise<void> {
+  const stats = await sheetsService.getUserMonthlyStats(
+    sheetsService["accessToken"],
+    spreadsheetId,
+    targetUserId,
+    guildId
+  );
+
+  if (!stats.success) {
+    await discordApiService.editDeferredResponse(
+      applicationId,
+      token,
+      `❌ 統計取得エラー: ${stats.error}`,
+      true
+    );
+    return;
+  }
+
+  // レスポンスメッセージの構築
+  let message = `📊 **${
+    stats.username || "ユーザー"
+  }さんの今月の勤務統計**\n\n`;
+  message += `🕒 **合計勤務時間**: ${stats.totalWorkTime || "0時間0分"}\n\n`;
+
+  if (
+    stats.projectBreakdown &&
+    Object.keys(stats.projectBreakdown).length > 0
+  ) {
+    message += `📁 **プロジェクト別内訳**:\n`;
+    for (const [projectName, workTime] of Object.entries(
+      stats.projectBreakdown
+    )) {
+      message += `• ${projectName}: ${workTime}\n`;
+    }
+  } else {
+    message += `📁 **プロジェクト別内訳**: データがありません\n`;
+  }
+
+  await discordApiService.editDeferredResponse(
+    applicationId,
+    token,
+    message
+  );
+}
+
+/**
+ * プロジェクト統計の処理
+ */
+async function handleProjectStats(
+  sheetsService: SheetsService,
+  discordApiService: DiscordApiService,
+  applicationId: string,
+  token: string,
+  spreadsheetId: string,
+  targetProject: string,
+  guildId: string,
+  requestUsername: string
+): Promise<void> {
+  const stats = await sheetsService.getProjectMonthlyStats(
+    sheetsService["accessToken"],
+    spreadsheetId,
+    targetProject,
+    guildId
+  );
+
+  if (!stats.success) {
+    await discordApiService.editDeferredResponse(
+      applicationId,
+      token,
+      `❌ 統計取得エラー: ${stats.error}`,
+      true
+    );
+    return;
+  }
+
+  // レスポンスメッセージの構築
+  let message = `**${requestUsername}さんが📊 statusを使用しました**\n\n`;
+  message += `📁 **${stats.projectName || targetProject}の今月の統計**\n\n`;
+  message += `🕒 **合計勤務時間**: ${stats.totalWorkTime || "0時間0分"}\n\n`;
+
+  if (stats.userBreakdown && Object.keys(stats.userBreakdown).length > 0) {
+    message += `👥 **メンバー別内訳**:\n`;
+    for (const [userId, userData] of Object.entries(stats.userBreakdown)) {
+      message += `• ${userData.username}: ${userData.workTime}\n`;
+    }
+  } else {
+    message += `👥 **メンバー別内訳**: データがありません\n`;
+  }
+
+  await discordApiService.editDeferredResponse(
+    applicationId,
+    token,
+    message
+  );
 }
 
 export default app;
