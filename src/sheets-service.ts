@@ -58,25 +58,32 @@ export class SheetsService {
     if (!response.ok) {
       // 401エラーの場合、トークンリフレッシュを試行
       if (response.status === 401 && guildId) {
-        console.log(`401エラーが発生しました。トークンをリフレッシュします (guildId: ${guildId})`);
-        
-        const { OAuthService } = await import('./oauth-service');
+        console.log(
+          `401エラーが発生しました。トークンをリフレッシュします (guildId: ${guildId})`
+        );
+
+        const { OAuthService } = await import("./oauth-service");
         const oauthService = new OAuthService(this.env);
         const refreshResult = await oauthService.refreshTokens(guildId);
-        
+
         if (refreshResult.success) {
           // 新しいトークンを取得してリトライ
-          const { ServerConfigService } = await import('./server-config-service');
+          const { ServerConfigService } = await import(
+            "./server-config-service"
+          );
           const serverConfigService = new ServerConfigService(this.env);
           const config = await serverConfigService.getServerConfig(guildId);
-          
+
           if (config?.access_token) {
             this.accessToken = config.access_token;
-            throw new Error('RETRY_WITH_NEW_TOKEN'); // リトライを指示
+            throw new Error("RETRY_WITH_NEW_TOKEN"); // リトライを指示
           }
         }
-        
-        console.error('トークンリフレッシュに失敗しました:', refreshResult.error);
+
+        console.error(
+          "トークンリフレッシュに失敗しました:",
+          refreshResult.error
+        );
       }
 
       const errorText = await response.text();
@@ -109,7 +116,10 @@ export class SheetsService {
   /**
    * 新しいスプレッドシートを作成
    */
-  async createSpreadsheet(title: string, guildId?: string): Promise<GoogleSheetsResponse> {
+  async createSpreadsheet(
+    title: string,
+    guildId?: string
+  ): Promise<GoogleSheetsResponse> {
     const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM format
 
     const data = await this.makeApiRequest(
@@ -159,9 +169,12 @@ export class SheetsService {
     sheetId: number = 0
   ): Promise<void> {
     // ヘッダー行を設定（9列すべて）
-    await this.updateRange(spreadsheetId, `${sheetTitle}!A1:I1`, [
-      KINTAI_HEADERS,
-    ], guildId);
+    await this.updateRange(
+      spreadsheetId,
+      `${sheetTitle}!A1:I1`,
+      [KINTAI_HEADERS],
+      guildId
+    );
 
     // ヘッダー行のフォーマットを設定
     await this.formatHeaders(spreadsheetId, sheetId, guildId);
@@ -489,7 +502,12 @@ export class SheetsService {
         spreadsheetData.sheets?.[0]?.properties?.sheetId || 0;
 
       // 統一されたヘッダー行を追加
-      await this.setupKintaiHeaders(spreadsheetId, currentMonth, guildId, firstSheetId);
+      await this.setupKintaiHeaders(
+        spreadsheetId,
+        currentMonth,
+        guildId,
+        firstSheetId
+      );
 
       return {
         success: true,
@@ -544,12 +562,12 @@ export class SheetsService {
 
       // 日時フォーマット（完全な日時形式）
       const startTimeStr = this.formatDateTimeToJST(startTime);
-      
+
       // デバッグログ
-      console.log('記録開始時刻:', {
+      console.log("記録開始時刻:", {
         original: startTime.toISOString(),
         formatted: startTimeStr,
-        timezone: 'JST'
+        timezone: "JST",
       });
 
       // 記録ID生成（UUID形式）
@@ -573,7 +591,11 @@ export class SheetsService {
       await this.appendRow(spreadsheetId, `${sheetName}!A:I`, values, guildId);
 
       // 追加された行の番号を特定して数式を設定
-      const allValues = await this.getRange(spreadsheetId, `${sheetName}!A:I`, guildId);
+      const allValues = await this.getRange(
+        spreadsheetId,
+        `${sheetName}!A:I`,
+        guildId
+      );
       let targetRowIndex = -1;
 
       for (let i = 1; i < allValues.length; i++) {
@@ -666,13 +688,13 @@ export class SheetsService {
 
       // 終了時刻フォーマット
       const endTimeStr = this.formatDateTimeToJST(endTime);
-      
+
       // デバッグログ
-      console.log('記録終了時刻:', {
+      console.log("記録終了時刻:", {
         original: endTime.toISOString(),
         formatted: endTimeStr,
-        timezone: 'JST',
-        startTimeFromSheet: startTimeStr
+        timezone: "JST",
+        startTimeFromSheet: startTimeStr,
       });
 
       // やったことを更新（C列のみ）
@@ -740,9 +762,19 @@ export class SheetsService {
 
       return await this.handleApiResponse(response, operation, guildId);
     } catch (error) {
-      if (error instanceof Error && error.message === 'RETRY_WITH_NEW_TOKEN' && retryCount < 1) {
-        console.log('新しいトークンでリトライします');
-        return this.makeApiRequest(url, options, operation, guildId, retryCount + 1);
+      if (
+        error instanceof Error &&
+        error.message === "RETRY_WITH_NEW_TOKEN" &&
+        retryCount < 1
+      ) {
+        console.log("新しいトークンでリトライします");
+        return this.makeApiRequest(
+          url,
+          options,
+          operation,
+          guildId,
+          retryCount + 1
+        );
       }
       throw error;
     }
@@ -767,15 +799,15 @@ export class SheetsService {
   private formatDateTimeToJST(date: Date): string {
     // 日本時間に変換してフォーマット
     const jstOffset = 9 * 60; // JST = UTC+9
-    const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
-    const jstTime = new Date(utc + (jstOffset * 60000));
-    
+    const utc = date.getTime() + date.getTimezoneOffset() * 60000;
+    const jstTime = new Date(utc + jstOffset * 60000);
+
     const year = jstTime.getFullYear();
-    const month = String(jstTime.getMonth() + 1).padStart(2, '0');
-    const day = String(jstTime.getDate()).padStart(2, '0');
-    const hour = String(jstTime.getHours()).padStart(2, '0');
-    const minute = String(jstTime.getMinutes()).padStart(2, '0');
-    
+    const month = String(jstTime.getMonth() + 1).padStart(2, "0");
+    const day = String(jstTime.getDate()).padStart(2, "0");
+    const hour = String(jstTime.getHours()).padStart(2, "0");
+    const minute = String(jstTime.getMinutes()).padStart(2, "0");
+
     return `${year}/${month}/${day} ${hour}:${minute}`;
   }
 
@@ -878,10 +910,16 @@ export class SheetsService {
     );
 
     // 新しく作成されたシートのIDを取得
-    const newSheetId = addSheetResponse.replies?.[0]?.addSheet?.properties?.sheetId || 0;
+    const newSheetId =
+      addSheetResponse.replies?.[0]?.addSheet?.properties?.sheetId || 0;
 
     // 統一されたヘッダー行とフォーマットを設定
-    await this.setupKintaiHeaders(spreadsheetId, sheetName, guildId, newSheetId);
+    await this.setupKintaiHeaders(
+      spreadsheetId,
+      sheetName,
+      guildId,
+      newSheetId
+    );
   }
 
   /**
@@ -1058,6 +1096,258 @@ export class SheetsService {
       return {
         found: false,
         error: `アクティブ勤務記録の取得に失敗しました: ${errorMessage}`,
+      };
+    }
+  }
+
+  /**
+   * 時間文字列を分に変換するヘルパー関数
+   */
+  private parseWorkTime(timeStr: string): number {
+    if (!timeStr || timeStr === "" || timeStr === "エラー") {
+      return 0;
+    }
+
+    let totalMinutes = 0;
+
+    // "8時間30分" 形式をパース
+    const hourMinuteMatch = timeStr.match(/(\d+)時間(\d+)分/);
+    if (hourMinuteMatch) {
+      totalMinutes =
+        parseInt(hourMinuteMatch[1]) * 60 + parseInt(hourMinuteMatch[2]);
+      return totalMinutes;
+    }
+
+    // "8時間" 形式をパース
+    const hourMatch = timeStr.match(/(\d+)時間/);
+    if (hourMatch) {
+      totalMinutes = parseInt(hourMatch[1]) * 60;
+      return totalMinutes;
+    }
+
+    // "30分" 形式をパース
+    const minuteMatch = timeStr.match(/(\d+)分/);
+    if (minuteMatch) {
+      totalMinutes = parseInt(minuteMatch[1]);
+      return totalMinutes;
+    }
+
+    return 0;
+  }
+
+  /**
+   * 分を時間文字列に変換するヘルパー関数
+   */
+  private formatWorkTime(totalMinutes: number): string {
+    if (totalMinutes === 0) {
+      return "0時間0分";
+    }
+
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    if (hours === 0) {
+      return `${minutes}分`;
+    } else if (minutes === 0) {
+      return `${hours}時間`;
+    } else {
+      return `${hours}時間${minutes}分`;
+    }
+  }
+
+  /**
+   * 特定ユーザーの今月の統計を取得
+   */
+  async getUserMonthlyStats(
+    accessToken: string,
+    spreadsheetId: string,
+    userId: string,
+    guildId?: string
+  ): Promise<{
+    success: boolean;
+    username?: string;
+    totalWorkTime?: string;
+    projectBreakdown?: { [projectName: string]: string };
+    error?: string;
+  }> {
+    try {
+      this.accessToken = accessToken;
+
+      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+      const sheetName = currentMonth;
+
+      // シートが存在するかチェック
+      const sheetsData = await this.getSpreadsheetInfo(spreadsheetId, guildId);
+      const sheetExists = sheetsData.sheets?.some(
+        (sheet: any) => sheet.properties.title === sheetName
+      );
+
+      if (!sheetExists) {
+        return {
+          success: true,
+          username: "不明",
+          totalWorkTime: "0時間0分",
+          projectBreakdown: {},
+        };
+      }
+
+      // 今月のデータを取得
+      const range = `${sheetName}!A:I`;
+      const values = await this.getRange(spreadsheetId, range, guildId);
+
+      let username = "不明";
+      let totalMinutes = 0;
+      const projectBreakdown: { [projectName: string]: number } = {};
+
+      // データを解析（ヘッダー行をスキップ）
+      for (let i = 1; i < values.length; i++) {
+        const row = values[i];
+
+        // 指定されたユーザーIDと一致し、終了時刻がある（完了済み）レコードのみ
+        if (
+          row[KINTAI_COLUMNS.DISCORD_ID] === userId &&
+          row[KINTAI_COLUMNS.END_TIME] !== ""
+        ) {
+          // ユーザー名を取得
+          if (username === "不明" && row[KINTAI_COLUMNS.USERNAME]) {
+            username = row[KINTAI_COLUMNS.USERNAME];
+          }
+
+          // 勤務時間を解析
+          const workTimeStr = row[KINTAI_COLUMNS.WORK_HOURS] || "";
+          const workMinutes = this.parseWorkTime(workTimeStr);
+          totalMinutes += workMinutes;
+
+          // プロジェクト別の集計
+          const projectName = row[KINTAI_COLUMNS.PROJECT] || "不明";
+          projectBreakdown[projectName] =
+            (projectBreakdown[projectName] || 0) + workMinutes;
+        }
+      }
+
+      // プロジェクト別時間を文字列に変換
+      const projectBreakdownStr: { [projectName: string]: string } = {};
+      for (const [projectName, minutes] of Object.entries(projectBreakdown)) {
+        projectBreakdownStr[projectName] = this.formatWorkTime(minutes);
+      }
+
+      return {
+        success: true,
+        username,
+        totalWorkTime: this.formatWorkTime(totalMinutes),
+        projectBreakdown: projectBreakdownStr,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error("Failed to get user monthly stats:", error);
+      return {
+        success: false,
+        error: `ユーザー統計の取得に失敗しました: ${errorMessage}`,
+      };
+    }
+  }
+
+  /**
+   * 特定プロジェクトの今月の統計を取得
+   */
+  async getProjectMonthlyStats(
+    accessToken: string,
+    spreadsheetId: string,
+    projectName: string,
+    guildId?: string
+  ): Promise<{
+    success: boolean;
+    projectName?: string;
+    totalWorkTime?: string;
+    userBreakdown?: {
+      [userId: string]: { username: string; workTime: string };
+    };
+    error?: string;
+  }> {
+    try {
+      this.accessToken = accessToken;
+
+      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+      const sheetName = currentMonth;
+
+      // シートが存在するかチェック
+      const sheetsData = await this.getSpreadsheetInfo(spreadsheetId, guildId);
+      const sheetExists = sheetsData.sheets?.some(
+        (sheet: any) => sheet.properties.title === sheetName
+      );
+
+      if (!sheetExists) {
+        return {
+          success: true,
+          projectName,
+          totalWorkTime: "0時間0分",
+          userBreakdown: {},
+        };
+      }
+
+      // 今月のデータを取得
+      const range = `${sheetName}!A:I`;
+      const values = await this.getRange(spreadsheetId, range, guildId);
+
+      let totalMinutes = 0;
+      const userBreakdown: {
+        [userId: string]: { username: string; workTime: number };
+      } = {};
+
+      // データを解析（ヘッダー行をスキップ）
+      for (let i = 1; i < values.length; i++) {
+        const row = values[i];
+
+        // 特定プロジェクトの完了済みレコードのみ
+        const rowProjectName = row[KINTAI_COLUMNS.PROJECT] || "";
+        const isTargetProject =
+          projectName === "all-projects" || rowProjectName === projectName;
+
+        if (isTargetProject && row[KINTAI_COLUMNS.END_TIME] !== "") {
+          // 勤務時間を解析
+          const workTimeStr = row[KINTAI_COLUMNS.WORK_HOURS] || "";
+          const workMinutes = this.parseWorkTime(workTimeStr);
+          totalMinutes += workMinutes;
+
+          // ユーザー別の集計
+          const userId = row[KINTAI_COLUMNS.DISCORD_ID] || "不明";
+          const username = row[KINTAI_COLUMNS.USERNAME] || "不明";
+
+          if (!userBreakdown[userId]) {
+            userBreakdown[userId] = {
+              username,
+              workTime: 0,
+            };
+          }
+          userBreakdown[userId].workTime += workMinutes;
+        }
+      }
+
+      // ユーザー別時間を文字列に変換
+      const userBreakdownStr: {
+        [userId: string]: { username: string; workTime: string };
+      } = {};
+      for (const [userId, userData] of Object.entries(userBreakdown)) {
+        userBreakdownStr[userId] = {
+          username: userData.username,
+          workTime: this.formatWorkTime(userData.workTime),
+        };
+      }
+
+      return {
+        success: true,
+        projectName,
+        totalWorkTime: this.formatWorkTime(totalMinutes),
+        userBreakdown: userBreakdownStr,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error("Failed to get project monthly stats:", error);
+      return {
+        success: false,
+        error: `プロジェクト統計の取得に失敗しました: ${errorMessage}`,
       };
     }
   }
