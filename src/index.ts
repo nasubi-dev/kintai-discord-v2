@@ -923,7 +923,7 @@ async function handleEndCommandWithRetry(
         return;
       }
 
-      // スプレッドシートで勤務記録をチェック（KVの代わり）
+      // スプレッドシートで勤務記録をチェック
       const sheetsService = new SheetsService(c.env);
       activeWorkRecord = await sheetsService.getActiveWorkRecord(
         serverConfig.access_token,
@@ -2020,11 +2020,7 @@ async function handleUserStats(
     message += `📁 **プロジェクト別内訳**: データがありません\n`;
   }
 
-  await discordApiService.editDeferredResponse(
-    applicationId,
-    token,
-    message
-  );
+  await discordApiService.editDeferredResponse(applicationId, token, message);
 }
 
 /**
@@ -2071,11 +2067,7 @@ async function handleProjectStats(
     message += `👥 **メンバー別内訳**: データがありません\n`;
   }
 
-  await discordApiService.editDeferredResponse(
-    applicationId,
-    token,
-    message
-  );
+  await discordApiService.editDeferredResponse(applicationId, token, message);
 }
 
 export default app;
