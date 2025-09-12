@@ -1,4 +1,4 @@
-import { GoogleSheetsResponse, GoogleOAuthTokens, Bindings } from "./types";
+import { GoogleSheetsResponse, Bindings } from "./types";
 import { parseDateTimeFromJST } from "./utils";
 
 // スプレッドシートのカラム定義を統一（新しいテーブル構造に対応）
@@ -780,22 +780,6 @@ export class SheetsService {
     }
   }
 
-  /**
-   * 日時フォーマットのヘルパーメソッド
-   */
-  private formatDateToJST(date: Date): string {
-    return date.toLocaleDateString("ja-JP", {
-      timeZone: "Asia/Tokyo",
-    });
-  }
-
-  private formatTimeToJST(date: Date): string {
-    return date.toLocaleTimeString("ja-JP", {
-      timeZone: "Asia/Tokyo",
-      hour12: false,
-    });
-  }
-
   private formatDateTimeToJST(date: Date): string {
     // 日本時間に変換してフォーマット
     const jstOffset = 9 * 60; // JST = UTC+9
@@ -809,71 +793,6 @@ export class SheetsService {
     const minute = String(jstTime.getMinutes()).padStart(2, "0");
 
     return `${year}/${month}/${day} ${hour}:${minute}`;
-  }
-
-  /**
-   * 勤務時間を計算（日時文字列から）
-   */
-  private calculateWorkHoursFromDateTime(
-    startTimeStr: string,
-    endTimeStr: string
-  ): string {
-    try {
-      const startTime = new Date(
-        startTimeStr.replace(
-          /(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})/,
-          "$1-$2-$3T$4:$5:00+09:00"
-        )
-      );
-      const endTime = new Date(
-        endTimeStr.replace(
-          /(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})/,
-          "$1-$2-$3T$4:$5:00+09:00"
-        )
-      );
-
-      const diffMs = endTime.getTime() - startTime.getTime();
-
-      if (diffMs < 0) {
-        return "エラー";
-      }
-
-      // 総分数を計算
-      const totalMinutes = Math.floor(diffMs / (1000 * 60));
-      const hours = Math.floor(totalMinutes / 60);
-      const minutes = totalMinutes % 60;
-
-      return `${hours}時間${minutes}分`;
-    } catch (error) {
-      console.error("Work hours calculation error:", error);
-      return "計算エラー";
-    }
-  }
-
-  /**
-   * 勤務時間を計算
-   */
-  private calculateWorkHours(startTimeStr: string, endTimeStr: string): string {
-    try {
-      // 日付をまたぐ可能性を考慮した時刻計算
-      const startTime = new Date(`${startTimeStr}`);
-      const endTime = new Date(`${endTimeStr}`);
-
-      const diffMs = endTime.getTime() - startTime.getTime();
-
-      if (diffMs < 0) {
-        return "エラー";
-      }
-
-      // 総分数を計算
-      const totalMinutes = Math.floor(diffMs / (1000 * 60));
-      const hours = Math.floor(totalMinutes / 60);
-      const minutes = totalMinutes % 60;
-
-      return `${hours}時間${minutes}分`;
-    } catch (error) {
-      return "計算エラー";
-    }
   }
 
   /**

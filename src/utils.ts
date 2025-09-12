@@ -51,10 +51,6 @@ export function isTimestampValid(
   return Math.abs(now - requestTime) <= maxAge;
 }
 
-export function getCurrentTimestamp(): string {
-  return new Date().toISOString();
-}
-
 /**
  * チャンネルIDが許可リストに含まれているかチェック
  * @param channelId チャンネルID
@@ -148,19 +144,6 @@ export function parseTimeStringToJST(
 export function isFutureTime(targetTime: Date): boolean {
   const now = new Date();
   return targetTime.getTime() > now.getTime();
-}
-
-/**
- * 終了時刻が開始時刻より前になっていないかチェック
- * @param startTime 開始時刻
- * @param endTime 終了時刻
- * @returns 終了時刻が開始時刻より前の場合 true
- */
-export function isEndTimeBeforeStartTime(
-  startTime: Date,
-  endTime: Date
-): boolean {
-  return endTime.getTime() < startTime.getTime();
 }
 
 /**
