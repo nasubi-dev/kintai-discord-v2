@@ -349,13 +349,18 @@ export function parseDateTimeFromJST(jstDateTimeString: string): Date | null {
     const matchMinutes = jstDateTimeString.match(
       /^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{1,2})$/
     );
-    
+
     // 秒ありの形式: "2025/07/31 17:32:00" (後方互換性のため)
     const matchSeconds = jstDateTimeString.match(
       /^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})$/
     );
 
-    let year: string, month: string, day: string, hours: string, minutes: string, seconds: string = "0";
+    let year: string,
+      month: string,
+      day: string,
+      hours: string,
+      minutes: string,
+      seconds: string = "0";
 
     if (matchMinutes) {
       [, year, month, day, hours, minutes] = matchMinutes;
@@ -372,7 +377,7 @@ export function parseDateTimeFromJST(jstDateTimeString: string): Date | null {
 
     // JST時刻として正確に解釈してUTCに変換
     const jstOffset = 9 * 60; // JST = UTC+9 (分単位)
-    
+
     // ローカル時刻として作成（JST想定）
     const localDate = new Date(
       parseInt(year),
@@ -384,7 +389,7 @@ export function parseDateTimeFromJST(jstDateTimeString: string): Date | null {
     );
 
     // JSTからUTCに変換
-    const utcTime = localDate.getTime() - (jstOffset * 60000);
+    const utcTime = localDate.getTime() - jstOffset * 60000;
     const utcDate = new Date(utcTime);
 
     return utcDate;
