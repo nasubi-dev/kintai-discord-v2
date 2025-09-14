@@ -73,9 +73,7 @@ export class ServerConfigService {
     return (await this.getServerConfig(guildId))?.owner_id === userId;
   }
 
-  async getServerStatus(
-    guildId: string
-  ): Promise<{
+  async getServerStatus(guildId: string): Promise<{
     configured: boolean;
     spreadsheetUrl?: string;
     createdAt?: string;
