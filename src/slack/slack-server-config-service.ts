@@ -1,17 +1,17 @@
-import { ServerConfig, Bindings, GoogleOAuthTokens } from "./types";
-import { CryptoService } from "./crypto-service";
+import { ServerConfig, Bindings, GoogleOAuthTokens } from "./slack-types";
+import { CryptoService } from "./slack-crypto-service";
 
 export class ServerConfigService {
   private kv: KVNamespace;
   private cryptoService: CryptoService;
 
   constructor(env: Bindings) {
-    this.kv = env.KINTAI_DISCORD_KV;
+    this.kv = env.KINTAI_SLACK_KV;
     this.cryptoService = new CryptoService(env.ENCRYPTION_KEY);
   }
 
   async saveServerConfig(
-    guildId: string,
+    teamId: string,
     ownerId: string,
     tokens: GoogleOAuthTokens,
     spreadsheetId: string,
@@ -27,11 +27,11 @@ export class ServerConfigService {
       owner_id: ownerId,
       created_at: new Date().toISOString(),
     };
-    await this.kv.put(`server:${guildId}`, JSON.stringify(config));
+    await this.kv.put(`server:${teamId}`, JSON.stringify(config));
   }
 
-  async getServerConfig(guildId: string): Promise<ServerConfig | null> {
-    const configStr = await this.kv.get(`server:${guildId}`);
+  async getServerConfig(teamId: string): Promise<ServerConfig | null> {
+    const configStr = await this.kv.get(`server:${teamId}`);
     if (!configStr) return null;
     const config = JSON.parse(configStr) as ServerConfig;
     return {
@@ -44,13 +44,13 @@ export class ServerConfigService {
   }
 
   async updateAccessToken(
-    guildId: string,
+    teamId: string,
     newTokens: GoogleOAuthTokens
   ): Promise<void> {
-    const config = await this.getServerConfig(guildId);
+    const config = await this.getServerConfig(teamId);
     if (!config) throw new Error("Server config not found");
     await this.kv.put(
-      `server:${guildId}`,
+      `server:${teamId}`,
       JSON.stringify({
         ...config,
         access_token: await this.cryptoService.encrypt(newTokens.access_token),
@@ -61,25 +61,25 @@ export class ServerConfigService {
     );
   }
 
-  async deleteServerConfig(guildId: string): Promise<void> {
-    await this.kv.delete(`server:${guildId}`);
+  async deleteServerConfig(teamId: string): Promise<void> {
+    await this.kv.delete(`server:${teamId}`);
   }
 
-  async hasServerConfig(guildId: string): Promise<boolean> {
-    return (await this.kv.get(`server:${guildId}`)) !== null;
+  async hasServerConfig(teamId: string): Promise<boolean> {
+    return (await this.kv.get(`server:${teamId}`)) !== null;
   }
 
-  async isServerOwner(guildId: string, userId: string): Promise<boolean> {
-    return (await this.getServerConfig(guildId))?.owner_id === userId;
+  async isServerOwner(teamId: string, userId: string): Promise<boolean> {
+    return (await this.getServerConfig(teamId))?.owner_id === userId;
   }
 
-  async getServerStatus(guildId: string): Promise<{
+  async getServerStatus(teamId: string): Promise<{
     configured: boolean;
     spreadsheetUrl?: string;
     createdAt?: string;
     ownerId?: string;
   }> {
-    const config = await this.getServerConfig(guildId);
+    const config = await this.getServerConfig(teamId);
     return config
       ? {
           configured: true,
