@@ -818,6 +818,7 @@ export class SheetsService {
                     rowCount: 1000,
                     columnCount: 10,
                   },
+                  index: 0,
                 },
               },
             },
