@@ -1344,7 +1344,9 @@ ${authUrl}
 ⚠️ **注意事項**
 - 管理者のみがこの設定を行えます
 - Google アカウントでスプレッドシートの作成権限が必要です
-- 認証リンクは10分間有効です`,
+- 認証リンクは10分間有効です
+
+📖 **詳細な手順が載った公式サイト**: https://github.com/nasubi-dev/kintai-discord-v2`,
       true
     );
   } catch (error) {
@@ -1508,7 +1510,9 @@ async function handleResetCommand(
 **次の手順**
 新しく設定する場合は \`/init\` コマンドを実行してください。
 
-⚠️ **注意**: スプレッドシート自体は削除されません。`,
+⚠️ **注意**: スプレッドシート自体は削除されません。
+
+📖 **詳細な手順が載った公式サイト**: https://github.com/nasubi-dev/kintai-discord-v2`,
       true
     );
   } catch (error) {
