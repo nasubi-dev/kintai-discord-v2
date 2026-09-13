@@ -5,6 +5,8 @@ export type Bindings = {
   DISCORD_TOKEN: string;
   ALLOWED_CHANNEL_IDS: string;
   KINTAI_DISCORD_KV: KVNamespace;
+  // 利用状況の記録（未設定なら記録しない）
+  ANALYTICS?: AnalyticsEngineDataset;
   // 暗号化キー
   ENCRYPTION_KEY: string;
 };
