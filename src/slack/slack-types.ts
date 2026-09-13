@@ -6,6 +6,8 @@ export type Bindings = {
   SLACK_CLIENT_ID: string;
   SLACK_CLIENT_SECRET: string;
   KINTAI_SLACK_KV: KVNamespace;
+  // 利用状況の記録（未設定なら記録しない）
+  ANALYTICS?: AnalyticsEngineDataset;
 };
 
 // GAS関連の型定義

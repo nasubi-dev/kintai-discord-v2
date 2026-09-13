@@ -17,6 +17,7 @@ import {
   parseTimeStringWithDate,
 } from "./utils";
 import { DiscordApiService } from "./discord-api-service";
+import { recordCommand, CommandOutcome } from "./analytics";
 import { OAuthService } from "./oauth-service";
 import { ServerConfigService } from "./server-config-service";
 import { SheetsService } from "./sheets-service";
@@ -365,6 +366,19 @@ async function handleSlashCommandDeferred(
 
   const discordApiService = new DiscordApiService(c.env.DISCORD_TOKEN);
 
+  // 利用状況の記録（Analytics Engine）。処理結果に関わらず必ず1件書く
+  const startedAt = Date.now();
+  let outcome: CommandOutcome = "ok";
+  const record = () =>
+    recordCommand(c.env, {
+      platform: "discord",
+      command: commandName,
+      outcome,
+      guildId: interaction.guild_id ?? "dm",
+      userId: userId ?? "unknown",
+      durationMs: Date.now() - startedAt,
+    });
+
   if (!userId || !channelId) {
     await discordApiService.deleteOriginalResponse(
       c.env.DISCORD_APPLICATION_ID,
@@ -377,6 +391,8 @@ async function handleSlashCommandDeferred(
       "❌ ユーザー情報またはチャンネル情報を取得できませんでした。",
       true // ephemeral
     );
+    outcome = "rejected";
+    record();
     return;
   }
 
@@ -406,7 +422,8 @@ async function handleSlashCommandDeferred(
             "❌ `todo` パラメータは必須です。やったことを記録してください。\n\n例: `/end todo:コーディング`",
             true // ephemeral
           );
-          return;
+          outcome = "rejected";
+          break;
         }
 
         await handleEndCommandWithRetry(
@@ -451,8 +468,10 @@ async function handleSlashCommandDeferred(
           "❌ 不明なコマンドです。",
           true // ephemeral
         );
+        outcome = "rejected";
     }
   } catch (error) {
+    outcome = "error";
     console.error("Command processing error:", error);
     console.error("Error details:", {
       message: error instanceof Error ? error.message : String(error),
@@ -487,6 +506,8 @@ async function handleSlashCommandDeferred(
       `❌ 処理中にエラーが発生しました\n\n**エラー詳細**:\n\`\`\`\n${truncatedErrorMessage}\n\`\`\`\n\nしばらく待ってから再試行してください。\n問題が続く場合は管理者にお問い合わせください。`,
       true // ephemeral
     );
+  } finally {
+    record();
   }
 }
 

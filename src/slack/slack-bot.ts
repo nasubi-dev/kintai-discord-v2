@@ -3,6 +3,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { Bindings } from "./slack-types";
+import { recordCommand, CommandOutcome } from "../analytics";
 import { formatDateToJST, parseDateTimeFromJST } from "./slack-utils";
 import { verifySlackRequest } from "./slack-utils";
 import { OAuthService } from "./slack-oauth-service";
@@ -71,20 +72,41 @@ app.post("/slack/interactions", async (c) => {
     const command = params.get("command");
     console.log("[Slack] コマンド:", command);
 
-    switch (command) {
-      case "/start":
-        return await handleSlackStartCommand(c, params);
-      case "/end":
-        return await handleSlackEndCommand(c, params);
-      case "/init":
-        return await handleSlackInitCommand(c, params);
-      case "/config":
-        return await handleSlackConfigCommand(c, params);
-      case "/reset":
-        return await handleSlackResetCommand(c, params);
-      default:
-        console.log("[Slack] 未対応コマンド:", command);
-        return c.json({ text: "❌ 未対応のコマンドです。" });
+    // 利用状況の記録（Analytics Engine）。Discord 側と同じスキーマで書く
+    const startedAt = Date.now();
+    let outcome: CommandOutcome = "ok";
+    const record = () =>
+      recordCommand(c.env, {
+        platform: "slack",
+        command: (command ?? "unknown").replace(/^\//, ""),
+        outcome,
+        guildId: params.get("team_id") ?? "unknown",
+        userId: params.get("user_id") ?? "unknown",
+        durationMs: Date.now() - startedAt,
+      });
+
+    try {
+      switch (command) {
+        case "/start":
+          return await handleSlackStartCommand(c, params);
+        case "/end":
+          return await handleSlackEndCommand(c, params);
+        case "/init":
+          return await handleSlackInitCommand(c, params);
+        case "/config":
+          return await handleSlackConfigCommand(c, params);
+        case "/reset":
+          return await handleSlackResetCommand(c, params);
+        default:
+          console.log("[Slack] 未対応コマンド:", command);
+          outcome = "rejected";
+          return c.json({ text: "❌ 未対応のコマンドです。" });
+      }
+    } catch (error) {
+      outcome = "error";
+      throw error;
+    } finally {
+      record();
     }
   } catch (error) {
     console.error("[Slack] コマンド処理エラー:", error);
