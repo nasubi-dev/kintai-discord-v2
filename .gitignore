@@ -32,3 +32,8 @@ lerna-debug.log*
 
 # misc
 .DS_Store
+
+# 実装時のメモ（公開しない・手元にだけ残す）
+docs/*
+!docs/仕組み.md
+TODO.md

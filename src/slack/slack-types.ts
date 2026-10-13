@@ -8,6 +8,8 @@ export type Bindings = {
   KINTAI_SLACK_KV: KVNamespace;
   // 利用状況の記録（未設定なら記録しない）
   ANALYTICS?: AnalyticsEngineDataset;
+  // 利用記録のユーザー ID を匿名化する鍵（wrangler secret でだけ設定する）
+  ANALYTICS_SALT?: string;
 };
 
 // GAS関連の型定義

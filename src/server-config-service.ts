@@ -63,6 +63,8 @@ export class ServerConfigService {
 
   async deleteServerConfig(guildId: string): Promise<void> {
     await this.kv.delete(`server:${guildId}`);
+    // /init で入力された OAuth クライアント ID・シークレットも消す
+    await this.kv.delete(`oauth_credentials:${guildId}`);
   }
 
   async hasServerConfig(guildId: string): Promise<boolean> {

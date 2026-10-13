@@ -370,14 +370,14 @@ async function handleSlashCommandDeferred(
   const startedAt = Date.now();
   let outcome: CommandOutcome = "ok";
   const record = () =>
-    recordCommand(c.env, {
+    c.executionCtx.waitUntil(recordCommand(c.env, {
       platform: "discord",
       command: commandName,
       outcome,
       guildId: interaction.guild_id ?? "dm",
       userId: userId ?? "unknown",
       durationMs: Date.now() - startedAt,
-    });
+    }));
 
   if (!userId || !channelId) {
     await discordApiService.deleteOriginalResponse(

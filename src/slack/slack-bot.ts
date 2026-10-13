@@ -76,14 +76,14 @@ app.post("/slack/interactions", async (c) => {
     const startedAt = Date.now();
     let outcome: CommandOutcome = "ok";
     const record = () =>
-      recordCommand(c.env, {
+      c.executionCtx.waitUntil(recordCommand(c.env, {
         platform: "slack",
         command: (command ?? "unknown").replace(/^\//, ""),
         outcome,
         guildId: params.get("team_id") ?? "unknown",
         userId: params.get("user_id") ?? "unknown",
         durationMs: Date.now() - startedAt,
-      });
+      }));
 
     try {
       switch (command) {

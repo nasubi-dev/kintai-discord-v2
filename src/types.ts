@@ -7,6 +7,8 @@ export type Bindings = {
   KINTAI_DISCORD_KV: KVNamespace;
   // 利用状況の記録（未設定なら記録しない）
   ANALYTICS?: AnalyticsEngineDataset;
+  // 利用記録のユーザー ID を匿名化する鍵（wrangler secret でだけ設定する）
+  ANALYTICS_SALT?: string;
   // 暗号化キー
   ENCRYPTION_KEY: string;
 };
