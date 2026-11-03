@@ -5,12 +5,12 @@
   "license": "MIT",
   "scripts": {
     "dev": "CLOUDFLARE_INCLUDE_PROCESS_ENV=true op run --env-file=.env.tpl -- wrangler dev",
-    "deploy": "wrangler deploy --minify",
+    "deploy": "op run --env-file=.env.cloudflare.tpl -- wrangler deploy --minify",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "register-commands": "op run --env-file=.env.tpl -- bun run register-commands.js",
     "setup": "cp wrangler.jsonc.example wrangler.jsonc",
-    "secrets:setup": "op run --env-file=.env.tpl -- bun run scripts/setup-secrets.js",
-    "kv:setup": "bash scripts/setup-kv.sh",
+    "secrets:setup": "op run --env-file=.env.tpl --env-file=.env.cloudflare.tpl -- bun run scripts/setup-secrets.js",
+    "kv:setup": "op run --env-file=.env.cloudflare.tpl -- bash scripts/setup-kv.sh",
     "list-guilds": "op run --env-file=.env.tpl -- bun run scripts/list-guilds.js",
     "guild-count": "op run --env-file=.env.tpl -- bun run scripts/guild-count.js"
   },
