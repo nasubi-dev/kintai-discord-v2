@@ -78,6 +78,7 @@ async function registerCommands() {
       name: "init",
       type: 1, // CHAT_INPUT
       description: "勤怠管理システムを初期設定します（管理者のみ）",
+      default_member_permissions: "32", // MANAGE_GUILD (0x20)。管理者・オーナーも含む
     },
     {
       name: "config",
@@ -88,6 +89,7 @@ async function registerCommands() {
       name: "reset",
       type: 1, // CHAT_INPUT
       description: "勤怠管理システムの設定をリセットします（管理者のみ）",
+      default_member_permissions: "32", // MANAGE_GUILD (0x20)。管理者・オーナーも含む
     },
     {
       name: "status",

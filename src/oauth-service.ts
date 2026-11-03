@@ -49,7 +49,23 @@ export class OAuthService {
         };
       }
 
-      const credentialsData = { clientId, clientSecret, guildId, userId };
+      // state は /init を実行したギルドに紐付いている。リクエストの guildId ではなく
+      // state に保存されたギルドを正とし、食い違う場合は拒否する
+      const authData = JSON.parse(authDataStr) as { guildId?: unknown };
+      const boundGuildId = authData.guildId;
+      if (typeof boundGuildId !== "string" || boundGuildId !== guildId) {
+        return {
+          success: false,
+          error: "認証セッションが無効または期限切れです",
+        };
+      }
+
+      const credentialsData = {
+        clientId,
+        clientSecret,
+        guildId: boundGuildId,
+        userId,
+      };
       const credentialsJson = JSON.stringify(credentialsData);
       const encryptedCredentials = await this.cryptoService.encrypt(
         credentialsJson
@@ -61,7 +77,10 @@ export class OAuthService {
       });
 
       // 永続的なOAuth認証情報（リフレッシュ時に使用）
-      await this.kv.put(`oauth_credentials:${guildId}`, encryptedCredentials);
+      await this.kv.put(
+        `oauth_credentials:${boundGuildId}`,
+        encryptedCredentials
+      );
 
       const redirectUri = `https://kintai-discord-v2.nasubi.dev/oauth/callback`;
       const params = new URLSearchParams({

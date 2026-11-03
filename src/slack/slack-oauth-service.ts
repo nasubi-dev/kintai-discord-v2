@@ -49,6 +49,28 @@ export class OAuthService {
         };
       }
 
+      // state は /init を実行したチームに紐付いている。別チームの teamId での登録は拒否する
+      const authData = JSON.parse(authDataStr);
+      if (
+        typeof authData?.teamId !== "string" ||
+        authData.teamId === "" ||
+        authData.teamId !== teamId
+      ) {
+        return {
+          success: false,
+          error: "認証セッションが無効または期限切れです",
+        };
+      }
+
+      // 設定済みのチームは上書きさせない。Slack 版には管理者チェックが無いので、
+      // 一般メンバーが /init し直して記録先を差し替えるのをここで止める
+      if (await new ServerConfigService(this.env).hasServerConfig(teamId)) {
+        return {
+          success: false,
+          error: "このチームは既に設定済みです",
+        };
+      }
+
       const credentialsData = { clientId, clientSecret, teamId, userId };
       const credentialsJson = JSON.stringify(credentialsData);
       const encryptedCredentials = await this.cryptoService.encrypt(
