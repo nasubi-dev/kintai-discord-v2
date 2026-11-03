@@ -7,6 +7,7 @@ import {
   InteractionType, // インタラクションタイプ（ApplicationCommand等）
   InteractionResponseType, // レスポンスタイプ（DeferredChannelMessage等）
   APIInteraction, // インタラクションの型定義
+  MessageFlags,
 } from "discord-api-types/v10";
 import {
   verifyDiscordRequest,
@@ -129,9 +130,16 @@ app.post("/api/interactions", async (c) => {
       console.log("Handling APPLICATION_COMMAND with Deferred Response");
 
       // 即座にDeferred Responseを返す（通信環境対応）
-      // 成功時は全員に見える、エラー時はEPHEMERALになるよう後で調整
+      // 見え方は保留の時点で決まり、後の編集で flags を付けても変わらない。
+      // /init は認証リンク（state 付き）を返すので、実行した本人にだけ見せる。
+      // 他人がそのリンクで先に登録すると、記録先を乗っ取れてしまうため
+      const commandName = (body.data as { name?: string } | undefined)?.name;
+      const ephemeralCommands = ["init", "reset"];
       const deferredResponse = {
         type: InteractionResponseType.DeferredChannelMessageWithSource,
+        ...(commandName && ephemeralCommands.includes(commandName)
+          ? { data: { flags: MessageFlags.Ephemeral } }
+          : {}),
       };
 
       // バックグラウンドで実際の処理を実行
@@ -1291,11 +1299,7 @@ async function handleSetupCommand(
     }
 
     // 管理者権限チェック（複数の方法でチェック）
-    const isAdmin = checkAdminPermissions(
-      member,
-      interaction.user?.id,
-      interaction.guild_id
-    );
+    const isAdmin = checkAdminPermissions(member);
 
     if (!isAdmin) {
       await discordApiService.editDeferredResponse(
@@ -1467,11 +1471,21 @@ async function handleResetCommand(
   try {
     // 管理者権限チェック
     const member = interaction.member;
-    if (!member || !member.roles) {
+    if (!member || !member.permissions) {
       await discordApiService.editDeferredResponse(
         c.env.DISCORD_APPLICATION_ID,
         token,
         "❌ 権限を確認できませんでした。",
+        true
+      );
+      return;
+    }
+
+    if (!checkAdminPermissions(member)) {
+      await discordApiService.editDeferredResponse(
+        c.env.DISCORD_APPLICATION_ID,
+        token,
+        "❌ このコマンドは管理者権限が必要です。\n\n**必要な権限:**\n• サーバー管理権限\n• 管理者権限\n• サーバーオーナー",
         true
       );
       return;
@@ -1842,56 +1856,28 @@ app.post("/api/register-oauth", async (c) => {
 });
 
 /**
- * Discord管理者権限をチェックする関数
+ * Discord の管理者権限をチェックする
+ *
+ * member.permissions は Discord が署名付きで送る、実行チャンネルでの実効権限。
+ * サーバーオーナーは全権限を持つので、ここに含まれる。
+ * ADMINISTRATOR (0x8) か MANAGE_GUILD (0x20) が無ければ false。解釈できない値も false。
  */
-function checkAdminPermissions(
-  member: any,
-  userId?: string,
-  guildId?: string
-): boolean {
-  // 1. サーバーオーナーチェック
-  if (userId && guildId && userId === guildId) {
-    return true;
+function checkAdminPermissions(member: { permissions?: string } | undefined): boolean {
+  if (!member?.permissions) return false;
+
+  let permissions: bigint;
+  try {
+    permissions = BigInt(member.permissions);
+  } catch {
+    return false;
   }
 
-  // 2. メンバーの権限ビットフィールドをチェック
-  if (member.permissions) {
-    const permissions = parseInt(member.permissions);
-
-    // ADMINISTRATOR権限 (0x8) または MANAGE_GUILD権限 (0x20) をチェック
-    const ADMINISTRATOR = 0x8;
-    const MANAGE_GUILD = 0x20;
-
-    if (
-      (permissions & ADMINISTRATOR) === ADMINISTRATOR ||
-      (permissions & MANAGE_GUILD) === MANAGE_GUILD
-    ) {
-      return true;
-    }
-  }
-
-  // 3. ロール名による簡易チェック（フォールバック）
-  if (member.roles && Array.isArray(member.roles)) {
-    // 注意: この方法は確実ではないが、フォールバックとして使用
-    const adminRoleNames = [
-      "admin",
-      "administrator",
-      "owner",
-      "mod",
-      "moderator",
-      "管理者",
-      "運営",
-      "オーナー",
-      "モデレーター",
-    ];
-
-    // この実装では実際のロール名ではなくロールIDが来るため、
-    // より寛容なチェックを行う
-    return true; // 一時的に全てのユーザーを許可
-  }
-
-  // 4. 最終的なフォールバック（開発・テスト用）
-  return true; // 一時的に全てのユーザーを許可
+  const ADMINISTRATOR = BigInt(0x8);
+  const MANAGE_GUILD = BigInt(0x20);
+  return (
+    (permissions & ADMINISTRATOR) === ADMINISTRATOR ||
+    (permissions & MANAGE_GUILD) === MANAGE_GUILD
+  );
 }
 
 /**

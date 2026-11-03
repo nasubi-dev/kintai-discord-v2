@@ -124,11 +124,14 @@ async function handleSlackInitCommand(c: any, body: any) {
       return c.json({ text: "❌ Slackユーザー情報の取得に失敗しました。" });
     }
 
-    // 既に設定済みかチェック（KVやDBで管理する場合はここで判定）
-    // 例: const hasConfig = await c.env.KINTAI_SLACK_KV.get(`slack_sheet_config:${teamId}`);
-    // if (hasConfig) {
-    //   return c.json({ text: "⚠️ 既に設定が完了しています。設定を変更したい場合は /reset コマンドで一度リセットしてください。" });
-    // }
+    // 設定済みのチームは /init し直せない。管理者チェックが無いため、
+    // 一般メンバーによる記録先の差し替えをここで止める
+    if (await new ServerConfigService(c.env).hasServerConfig(teamId)) {
+      return c.json({
+        response_type: "ephemeral",
+        text: "⚠️ 既に設定が完了しています。",
+      });
+    }
 
     // OAuth認証URL生成
     const oauthService = new OAuthService(c.env);
@@ -141,6 +144,8 @@ async function handleSlackInitCommand(c: any, body: any) {
     )}&type=oauth_init`;
 
     return c.json({
+      // 認証リンク（state 付き）は実行した本人にだけ見せる
+      response_type: "ephemeral",
       text: `🔧 勤怠管理システム初期設定
 Google スプレッドシートとの連携設定を行います。
 
